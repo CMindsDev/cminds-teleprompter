@@ -1,0 +1,66 @@
+---
+/**
+ * Botón principal de la app (el píldora ancho de todas las pantallas).
+ *
+ * `variant` cubre los cuatro estados que aparecen en el diseño:
+ *   glass  → portada oscura, con refracción liquid glass
+ *   brand  → azul C MINDS (guion listo, "Grabar ahora")
+ *   record → rojo (iniciar/detener grabación)
+ *   muted  → gris deshabilitado (guion vacío)
+ *
+ * `as="a"` lo convierte en enlace sin perder el estilo ni el foco.
+ */
+import Icon, { type IconName } from './Icon.astro';
+
+interface Props {
+  variant?: 'glass' | 'brand' | 'record' | 'muted';
+  icon?: IconName;
+  href?: string;
+  type?: 'button' | 'submit';
+  id?: string;
+  disabled?: boolean;
+  class?: string;
+  /** Nombre de transición compartida entre páginas (View Transitions). */
+  transitionName?: string;
+  /** Preset de LiquidClass; solo aplica a `variant="glass"`. */
+  liquid?: 'onDark' | 'onVideo' | 'control';
+}
+
+const {
+  variant = 'brand',
+  icon,
+  href,
+  type = 'button',
+  id,
+  disabled = false,
+  class: className = '',
+  transitionName,
+  liquid = 'onDark',
+} = Astro.props;
+
+const base =
+  'relative inline-flex w-full items-center justify-center gap-3 rounded-full px-6 py-4 text-[17px] font-semibold tracking-tight transition-colors duration-200 disabled:cursor-not-allowed';
+
+const VARIANTS = {
+  glass: 'liquid text-white',
+  brand: 'bg-brand-500 text-white hover:bg-brand-600 active:bg-brand-700 shadow-lg shadow-brand-500/25',
+  record: 'bg-record text-white hover:bg-record-dark shadow-lg shadow-record/30',
+  muted: 'bg-muted text-white/90',
+} as const;
+
+const Tag = href ? 'a' : 'button';
+---
+
+<Tag
+  id={id}
+  class:list={[base, VARIANTS[variant], className]}
+  href={href}
+  type={href ? undefined : type}
+  disabled={href ? undefined : disabled}
+  aria-disabled={disabled ? 'true' : undefined}
+  data-liquid={variant === 'glass' ? liquid : undefined}
+  transition:name={transitionName}
+>
+  {icon && <Icon name={icon} size={22} class="shrink-0" />}
+  <span class="relative z-10"><slot /></span>
+</Tag>

@@ -1,0 +1,57 @@
+---
+/** Control circular: volver, deshacer, rehacer, controles del teleprompter. */
+import Icon, { type IconName } from './Icon.astro';
+
+interface Props {
+  icon: IconName;
+  label: string;
+  href?: string;
+  id?: string;
+  size?: number;
+  iconSize?: number;
+  disabled?: boolean;
+  class?: string;
+  tone?: 'plain' | 'soft' | 'glass' | 'brand';
+  liquid?: 'onVideo' | 'control' | 'onDark';
+}
+
+const {
+  icon,
+  label,
+  href,
+  id,
+  size = 40,
+  iconSize = 20,
+  disabled = false,
+  class: className = '',
+  tone = 'plain',
+  liquid = 'control',
+} = Astro.props;
+
+const TONES = {
+  plain: 'text-ink-soft hover:bg-black/5 active:bg-black/10',
+  soft: 'bg-black/[0.06] text-ink-soft hover:bg-black/10 disabled:text-muted',
+  glass: 'liquid text-white',
+  brand: 'bg-brand-500 text-white hover:bg-brand-600',
+} as const;
+
+const Tag = href ? 'a' : 'button';
+---
+
+<Tag
+  id={id}
+  href={href}
+  type={href ? undefined : 'button'}
+  disabled={href ? undefined : disabled}
+  aria-label={label}
+  title={label}
+  style={`width:${size}px;height:${size}px`}
+  class:list={[
+    'inline-grid place-items-center rounded-full transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-45',
+    TONES[tone],
+    className,
+  ]}
+  data-liquid={tone === 'glass' ? liquid : undefined}
+>
+  <Icon name={icon} size={iconSize} />
+</Tag>

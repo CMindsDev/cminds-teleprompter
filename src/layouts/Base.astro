@@ -1,0 +1,95 @@
+---
+import { ClientRouter } from 'astro:transitions';
+import '../styles/global.css';
+
+interface Props {
+  title: string;
+  description?: string;
+  /** `dark` pinta el degradado azul de la portada; `video` deja el fondo negro. */
+  theme?: 'light' | 'dark' | 'video';
+  /** Bloquea el scroll de la página (pantallas a pantalla completa). */
+  lockScroll?: boolean;
+}
+
+const {
+  title,
+  description = 'Dale voz a tus ideas: escribe, lee a tu ritmo y grábate siendo tú.',
+  theme = 'light',
+  lockScroll = false,
+} = Astro.props;
+
+const BODY_THEME = {
+  light: 'bg-paper text-ink',
+  dark: 'bg-ink text-white',
+  video: 'bg-black text-white',
+} as const;
+---
+
+<!doctype html>
+<html lang="es" class={theme === 'light' ? '' : 'dark-surface'}>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <meta name="theme-color" content={theme === 'light' ? '#fafafa' : '#070615'} />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+
+    <!--
+      Permissions-Policy vía <meta>: autoriza cámara y micrófono en este mismo
+      origen. Los navegadores lo aplican como refuerzo; la cabecera HTTP
+      equivalente está en `public/_headers` y `vercel.json` para producción.
+    -->
+    <meta http-equiv="Permissions-Policy" content="camera=(self), microphone=(self)" />
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Parkinsans:wght@500;600;700;800&family=Sora:wght@300;400;500;600;700&display=swap"
+    />
+
+    <ClientRouter />
+  </head>
+
+  <body class:list={[BODY_THEME[theme], lockScroll && 'overflow-hidden']}>
+    <slot />
+
+    <!-- Contenedor de avisos flotantes (lo usa `motion.ts › toast`). -->
+    <div
+      id="toast-host"
+      class="pointer-events-none fixed inset-x-0 bottom-24 z-50 flex flex-col items-center gap-2 px-4"
+      aria-live="polite"
+    >
+    </div>
+
+    <script>
+      import { initLiquidGlass } from '../lib/liquid-glass/init';
+      import { enterScreen, exitScreen } from '../lib/motion';
+
+      /** Alto real del viewport: en móvil `100vh` incluye la barra del navegador. */
+      function syncViewportHeight(): void {
+        document.documentElement.style.setProperty('--app-vh', `${window.innerHeight}px`);
+      }
+
+      function boot(): void {
+        syncViewportHeight();
+        void initLiquidGlass();
+        enterScreen();
+      }
+
+      window.addEventListener('resize', syncViewportHeight);
+      document.addEventListener('astro:page-load', boot);
+
+      // Salida animada antes de que el ClientRouter cambie de página.
+      document.addEventListener('astro:before-preparation', (event) => {
+        const navigation = event as Event & { loader: () => Promise<void> };
+        const original = navigation.loader;
+        navigation.loader = async () => {
+          await exitScreen();
+          await original();
+        };
+      });
+    </script>
+  </body>
+</html>

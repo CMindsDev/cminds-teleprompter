@@ -1,0 +1,270 @@
+---
+/** Pantalla 6 — Mis grabaciones. */
+import Base from '../layouts/Base.astro';
+import IconButton from '../components/IconButton.astro';
+import LiquidButton from '../components/LiquidButton.astro';
+import Icon from '../components/Icon.astro';
+---
+
+<Base title="Mis grabaciones · Teleprompter" theme="light">
+  <main id="library-screen" class="app-shell px-6 safe-top safe-bottom">
+    <header class="flex items-start justify-between gap-4 py-2" data-anim data-anim-order="0">
+      <h1 class="font-display text-[26px] leading-tight font-bold">Mis grabaciones</h1>
+      <IconButton id="btn-search" icon="search" label="Buscar" tone="soft" iconSize={18} />
+    </header>
+
+    <!-- El buscador aparece solo al pedirlo: la lista manda. -->
+    <div id="search-wrap" class="hidden pt-2" data-anim data-anim-order="1">
+      <input
+        id="search-input"
+        type="search"
+        placeholder="Buscar por título"
+        class="w-full rounded-full border border-line bg-white px-4 py-2.5 text-sm focus:border-brand-500 focus:outline-none"
+      />
+    </div>
+
+    <section class="pt-4" data-anim data-anim-order="2">
+      <ul id="grid" class="grid grid-cols-2 gap-3"></ul>
+
+      <p id="empty-state" class="hidden pt-16 text-center text-sm leading-relaxed text-ink-soft/70">
+        Todavía no tienes grabaciones.<br />Escribe tu primer speech para empezar.
+      </p>
+    </section>
+
+    <div class="mt-auto pt-8" data-anim data-anim-order="3">
+      <LiquidButton variant="brand" icon="teleprompt" href="/editor" transitionName="cta-principal">
+        Escribir prompt
+      </LiquidButton>
+    </div>
+  </main>
+
+  <!-- Tarjeta de detalle -->
+  <dialog
+    id="detail"
+    class="m-auto w-[min(92vw,26rem)] rounded-3xl bg-paper p-6 text-ink backdrop:bg-ink/60 backdrop:backdrop-blur-sm"
+  >
+    <div class="flex items-start justify-between gap-4">
+      <h2 id="detail-title" class="font-display text-[20px] leading-tight font-bold"></h2>
+      <button
+        id="detail-close"
+        type="button"
+        aria-label="Cerrar"
+        class="grid h-8 w-8 shrink-0 place-items-center rounded-full text-ink-soft hover:bg-black/5"
+      >
+        <Icon name="close" size={20} />
+      </button>
+    </div>
+    <p id="detail-meta" class="mt-1 text-sm text-ink-soft tabular-nums"></p>
+
+    <video
+      id="detail-player"
+      class="mt-4 aspect-[9/16] max-h-[46vh] w-full rounded-2xl bg-black object-contain"
+      controls
+      playsinline></video>
+
+    <div class="mt-5 space-y-3">
+      <LiquidButton id="detail-download" variant="brand" icon="download">Descargar</LiquidButton>
+      <div class="flex gap-3">
+        <button
+          id="detail-delete"
+          type="button"
+          class="flex-1 rounded-full border border-line py-3 text-sm font-semibold text-record transition-colors hover:bg-record/5"
+        >
+          Eliminar
+        </button>
+        <a
+          id="detail-edit"
+          href="/editor"
+          class="flex-1 rounded-full bg-ink py-3 text-center text-sm font-semibold text-paper transition-opacity hover:opacity-90"
+        >
+          Editar guion
+        </a>
+      </div>
+    </div>
+  </dialog>
+</Base>
+
+<script>
+  import { gsap } from 'gsap';
+  import { listRecordings, deleteRecordingMeta, getRecording } from '../lib/store';
+  import { deleteBlob, getBlob } from '../lib/db';
+  import { downloadBlob, extensionFor, formatDuration, slugify } from '../lib/media';
+  import { toast } from '../lib/motion';
+  import { maybe, need, onScreen } from '../lib/dom';
+  import type { Recording } from '../lib/types';
+
+  onScreen('library-screen', () => {
+    const grid = need('grid');
+    const emptyState = need('empty-state');
+    const dialog = need('detail', HTMLDialogElement);
+    const searchWrap = need('search-wrap');
+    const searchInput = need('search-input', HTMLInputElement);
+
+    let objectUrl: string | null = null;
+
+    const formatDate = (ms: number): string =>
+      new Date(ms).toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' });
+
+    /* ── Lista ───────────────────────────────────────────── */
+
+    function cardMarkup(recording: Recording): string {
+      return `
+        <li>
+          <button
+            type="button"
+            data-id="${recording.id}"
+            class="flex aspect-square w-full flex-col justify-between rounded-2xl border border-brand-500/60 bg-white p-4 text-left transition-shadow hover:shadow-md focus-visible:shadow-md"
+          >
+            <span class="flex w-full items-center justify-between text-ink-soft">
+              <span class="text-xs font-semibold tabular-nums">${formatDuration(recording.duration)}</span>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M14.2583 20.5332V6.36674H8.8583V3.46674H22.5333V6.36674H17.1333V20.5332H14.2583ZM4.7668 20.5332V11.7332H1.4668V8.80824H10.9583V11.7332H7.6583V20.5332H4.7668Z" fill="currentColor"/>
+              </svg>
+            </span>
+            <span class="w-full">
+              <span class="line-clamp-2 block font-display text-[15px] leading-tight font-bold">${escapeHtml(recording.title)}</span>
+              <span class="mt-1 block text-[11px] text-ink-soft/70">${formatDate(recording.createdAt)}</span>
+            </span>
+          </button>
+        </li>`;
+    }
+
+    const NEW_CARD = `
+      <li>
+        <a
+          href="/editor"
+          class="grid aspect-square w-full place-items-center rounded-2xl border border-dashed border-line bg-black/[0.02] text-sm text-ink-soft/70 transition-colors hover:border-brand-500 hover:text-brand-500"
+        >
+          Nuevo speech
+        </a>
+      </li>`;
+
+    /** Los títulos los escribe el usuario: no se inyectan crudos en el HTML. */
+    function escapeHtml(value: string): string {
+      const el = document.createElement('span');
+      el.textContent = value;
+      return el.innerHTML;
+    }
+
+    function render(filter = ''): void {
+      const needle = filter.trim().toLowerCase();
+      const all = listRecordings();
+      const visible = needle ? all.filter((r) => r.title.toLowerCase().includes(needle)) : all;
+
+      grid.innerHTML = visible.map(cardMarkup).join('') + NEW_CARD;
+      emptyState.classList.toggle('hidden', all.length > 0);
+
+      if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        gsap.from(grid.children, {
+          y: 14,
+          autoAlpha: 0,
+          duration: 0.45,
+          ease: 'expo.out',
+          stagger: 0.04,
+          clearProps: 'all',
+        });
+      }
+    }
+
+    /* ── Buscador ────────────────────────────────────────── */
+
+    maybe('btn-search')?.addEventListener('click', () => {
+      const hidden = searchWrap.classList.toggle('hidden');
+      if (hidden) {
+        searchInput.value = '';
+        render();
+      } else {
+        searchInput.focus();
+      }
+    });
+
+    searchInput.addEventListener('input', () => render(searchInput.value));
+
+    /* ── Detalle ─────────────────────────────────────────── */
+
+    let current: Recording | null = null;
+    let currentBlob: Blob | null = null;
+
+    grid.addEventListener('click', (event) => {
+      const button = (event.target as HTMLElement).closest<HTMLButtonElement>('button[data-id]');
+      if (button?.dataset.id) void openDetail(button.dataset.id);
+    });
+
+    async function openDetail(id: string): Promise<void> {
+      const recording = getRecording(id);
+      if (!recording) return;
+      current = recording;
+
+      const titleEl = document.getElementById('detail-title');
+      const metaEl = document.getElementById('detail-meta');
+      const player = document.getElementById('detail-player');
+      const editLink = document.getElementById('detail-edit');
+
+      if (titleEl) titleEl.textContent = recording.title;
+      if (metaEl) {
+        const megabytes = (recording.size / (1024 * 1024)).toFixed(1);
+        metaEl.textContent = `${formatDate(recording.createdAt)} · ${formatDuration(recording.duration)} · ${megabytes} MB`;
+      }
+      if (editLink instanceof HTMLAnchorElement) editLink.href = `/editor?id=${recording.speechId}`;
+
+      currentBlob = (await getBlob(recording.blobKey)) ?? null;
+
+      if (player instanceof HTMLVideoElement) {
+        if (objectUrl) URL.revokeObjectURL(objectUrl);
+        if (currentBlob) {
+          objectUrl = URL.createObjectURL(currentBlob);
+          player.src = objectUrl;
+          player.classList.remove('hidden');
+        } else {
+          // El archivo pudo borrarse al limpiar los datos del navegador.
+          player.removeAttribute('src');
+          player.classList.add('hidden');
+          toast('El archivo de vídeo ya no está disponible.', 'error');
+        }
+      }
+
+      dialog.showModal();
+    }
+
+    function closeDetail(): void {
+      dialog.close();
+      if (objectUrl) {
+        URL.revokeObjectURL(objectUrl);
+        objectUrl = null;
+      }
+      currentBlob = null;
+      current = null;
+    }
+
+    maybe('detail-close')?.addEventListener('click', closeDetail);
+    dialog.addEventListener('close', () => {
+      if (objectUrl) {
+        URL.revokeObjectURL(objectUrl);
+        objectUrl = null;
+      }
+    });
+
+    maybe('detail-download')?.addEventListener('click', () => {
+      if (!currentBlob || !current) {
+        toast('No hay archivo que descargar.', 'error');
+        return;
+      }
+      const name = `${slugify(current.title)}-${new Date(current.createdAt).toISOString().slice(0, 10)}.${extensionFor(currentBlob.type)}`;
+      downloadBlob(currentBlob, name);
+    });
+
+    maybe('detail-delete')?.addEventListener('click', async () => {
+      if (!current) return;
+      if (!window.confirm(`¿Eliminar "${current.title}"? Esta acción no se puede deshacer.`)) return;
+
+      const { id, blobKey } = current;
+      await deleteBlob(blobKey).catch(() => undefined);
+      deleteRecordingMeta(id);
+      closeDetail();
+      render(searchInput.value);
+      toast('Grabación eliminada');
+    });
+
+    render();
+  });
+</script>

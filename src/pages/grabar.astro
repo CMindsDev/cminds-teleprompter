@@ -1,0 +1,748 @@
+---
+/**
+ * Pantallas 4 y 5 — Cámara y grabación con teleprompter.
+ *
+ * Tres estados sobre el mismo vídeo en vivo:
+ *   preview    → encuadre, botón "Iniciar grabación"
+ *   recording  → cronómetro, texto desplazándose, barra de controles
+ *   review     → hoja inferior con la toma: reproducir, descargar, guardar
+ */
+import Base from '../layouts/Base.astro';
+import IconButton from '../components/IconButton.astro';
+import LiquidButton from '../components/LiquidButton.astro';
+import Icon from '../components/Icon.astro';
+---
+
+<Base title="Grabar · Teleprompter" theme="video" lockScroll>
+  <main class="app-shell relative overflow-hidden bg-black" data-state="preview" id="stage">
+    <!-- Cámara. `mirrored` refleja la vista previa, no el archivo grabado. -->
+    <video
+      id="camera"
+      class="absolute inset-0 h-full w-full scale-x-[-1] object-cover"
+      playsinline
+      autoplay
+      muted></video>
+
+    <!-- Degradados: mantienen legibles los controles sobre cualquier encuadre. -->
+    <div
+      class="pointer-events-none absolute inset-x-0 top-0 h-40 bg-gradient-to-b from-black/55 to-transparent"
+      aria-hidden="true"
+    >
+    </div>
+    <div
+      class="pointer-events-none absolute inset-x-0 bottom-0 h-64 bg-gradient-to-t from-black/70 to-transparent"
+      aria-hidden="true"
+    >
+    </div>
+
+    <!-- ── Barra superior ─────────────────────────────────── -->
+    <header class="relative z-20 flex items-center justify-between px-6 safe-top" data-anim data-anim-order="0">
+      <IconButton
+        id="btn-exit"
+        icon="arrow-back"
+        label="Volver al editor"
+        iconSize={24}
+        class="text-white hover:bg-white/15"
+      />
+
+      <!-- Cronómetro: solo visible mientras se graba. -->
+      <div id="timer-wrap" class="hidden items-center gap-2" aria-live="off">
+        <span id="rec-dot" class="h-2.5 w-2.5 rounded-full bg-record"></span>
+        <span id="timer" class="font-display text-[17px] font-semibold tabular-nums text-white">00:00</span>
+      </div>
+
+      <div class="flex items-center gap-2">
+        <IconButton
+          id="btn-mirror"
+          icon="mirror"
+          label="Espejo del texto"
+          iconSize={20}
+          class="hidden text-white hover:bg-white/15"
+        />
+        <a
+          id="btn-edit"
+          href="/editor"
+          class="rounded-full border border-white/45 px-4 py-1.5 text-sm font-medium text-white backdrop-blur-sm transition-colors hover:bg-white/15"
+        >
+          Editar
+        </a>
+      </div>
+    </header>
+
+    <!-- ── Teleprompter ───────────────────────────────────── -->
+    <!--
+      El viewport se coloca sobre la mitad inferior del encuadre: así el texto
+      queda cerca de la cámara y la mirada no se desvía tanto. `mask-image`
+      difumina los bordes para que las líneas entren y salgan sin corte.
+    -->
+    <section
+      id="prompter-viewport"
+      class="absolute inset-x-0 bottom-[8.5rem] top-[42%] z-10 hidden overflow-hidden px-7"
+      style="mask-image: linear-gradient(to bottom, transparent, #000 14%, #000 62%, transparent 100%); -webkit-mask-image: linear-gradient(to bottom, transparent, #000 14%, #000 62%, transparent 100%)"
+      aria-hidden="true"
+    >
+      <div
+        id="prompter-track"
+        class="font-display font-bold tracking-tight whitespace-pre-wrap text-white will-change-transform"
+        style="text-shadow: 0 2px 14px rgba(0,0,0,0.6)"
+      >
+      </div>
+    </section>
+
+    <!-- Progreso de lectura -->
+    <div id="progress-rail" class="absolute inset-x-6 bottom-[7.25rem] z-20 hidden h-[3px] rounded-full bg-white/20">
+      <div id="progress-bar" class="h-full w-0 rounded-full bg-brand-500 transition-[width] duration-150"></div>
+    </div>
+
+    <!-- ── Controles inferiores ───────────────────────────── -->
+    <footer class="relative z-20 mt-auto px-6 pb-2 safe-bottom">
+      <!--
+        Ajustes del prompter. Viven fuera de los grupos de estado porque están
+        disponibles tanto al encuadrar como al grabar: se ajusta antes de
+        empezar y se corrige sobre la marcha sin cambiar de gesto.
+        La altura fija reserva el sitio para que abrir un slider no empuje
+        la fila de botones.
+      -->
+      <div class="relative h-12">
+        <p
+          id="slider-readout"
+          class="pointer-events-none absolute inset-x-0 -top-7 hidden text-center text-xs font-semibold text-white/80 tabular-nums"
+          aria-hidden="true"
+        >
+        </p>
+
+        <!-- Velocidad: regla horizontal -->
+        <div id="speed-slider" class="absolute inset-x-1 bottom-0 hidden"></div>
+
+        <!-- Tamaño de texto: barra vertical que crece hacia arriba -->
+        <div id="size-slider" class="absolute right-3 bottom-0 hidden"></div>
+      </div>
+
+      <!-- Estado preview -->
+      <div id="controls-preview" data-anim data-anim-order="1">
+        <div class="flex items-center justify-between px-2 pt-1">
+          <button
+            id="btn-speed"
+            type="button"
+            class="grid h-11 w-11 place-items-center rounded-full text-white transition-colors hover:bg-white/10"
+            aria-label="Velocidad del teleprompter"
+            aria-expanded="false"
+          >
+            <Icon name="speed" size={24} />
+          </button>
+
+          <button
+            id="btn-start"
+            type="button"
+            class="grid h-[62px] w-[62px] place-items-center rounded-full bg-record text-white shadow-lg shadow-record/40 transition-transform duration-200 hover:scale-105 active:scale-95"
+            aria-label="Iniciar grabación"
+            transition:name="cta-principal"
+          >
+            <Icon name="record" size={30} />
+          </button>
+
+          <button
+            id="btn-textsize"
+            type="button"
+            class="grid h-11 w-11 place-items-center rounded-full text-white transition-colors hover:bg-white/10"
+            aria-label="Tamaño del texto"
+            aria-expanded="false"
+          >
+            <Icon name="text-size" size={24} />
+          </button>
+        </div>
+      </div>
+
+      <!-- Estado recording -->
+      <div id="controls-recording" class="hidden">
+        <div class="flex items-center justify-between gap-1 px-1 pt-1">
+          <button
+            id="btn-speed-rec"
+            type="button"
+            class="grid h-11 w-11 place-items-center rounded-full text-white transition-colors hover:bg-white/10"
+            aria-label="Velocidad del teleprompter"
+            aria-expanded="false"
+          >
+            <Icon name="speed" size={24} />
+          </button>
+
+          <IconButton
+            id="btn-prev"
+            icon="prev"
+            label="Retroceder texto"
+            size={44}
+            iconSize={24}
+            class="text-white hover:bg-white/15"
+          />
+
+          <button
+            id="btn-stop"
+            type="button"
+            class="grid h-[62px] w-[62px] place-items-center rounded-full bg-record text-white shadow-lg shadow-record/40 transition-transform duration-200 hover:scale-105 active:scale-95"
+            aria-label="Detener y guardar"
+          >
+            <span class="block h-[22px] w-[22px] rounded-[5px] bg-white"></span>
+          </button>
+
+          <IconButton
+            id="btn-next"
+            icon="next"
+            label="Avanzar texto"
+            size={44}
+            iconSize={24}
+            class="text-white hover:bg-white/15"
+          />
+
+          <button
+            id="btn-textsize-rec"
+            type="button"
+            class="grid h-11 w-11 place-items-center rounded-full text-white transition-colors hover:bg-white/10"
+            aria-label="Tamaño del texto"
+            aria-expanded="false"
+          >
+            <Icon name="text-size" size={24} />
+          </button>
+        </div>
+
+        <!-- Play/pausa del texto: separado del botón rojo para no confundir
+             "pausar la lectura" con "detener la grabación". -->
+        <div class="flex justify-center pt-3">
+          <button
+            id="btn-play"
+            type="button"
+            data-liquid="onVideo"
+            class="liquid flex items-center gap-2 px-5 py-2 text-sm font-semibold text-white"
+            aria-label="Reproducir teleprompter"
+            aria-pressed="false"
+          >
+            <span id="icon-play" class="relative z-10 translate-x-[1px]"><Icon name="play" size={18} /></span>
+            <span id="icon-pause" class="relative z-10 hidden"><Icon name="pause" size={18} /></span>
+            <span id="play-label" class="relative z-10">Reanudar texto</span>
+          </button>
+        </div>
+      </div>
+    </footer>
+
+    <!-- ── Hoja de revisión ───────────────────────────────── -->
+    <section
+      id="review-sheet"
+      class="absolute inset-x-0 bottom-0 z-30 hidden translate-y-full rounded-t-[28px] bg-paper px-6 pt-5 text-ink safe-bottom"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="review-title"
+    >
+      <div class="mx-auto mb-4 h-1 w-10 rounded-full bg-black/15"></div>
+      <h2 id="review-title" class="font-display text-[22px] font-bold">Tu grabación está lista</h2>
+      <p id="review-meta" class="mt-1 text-sm text-ink-soft tabular-nums"></p>
+
+      <video
+        id="review-player"
+        class="mt-4 aspect-[9/16] max-h-[38vh] w-full rounded-2xl bg-black object-contain"
+        controls
+        playsinline></video>
+
+      <div class="mt-5 space-y-3">
+        <LiquidButton id="btn-download" variant="brand" icon="download">Descargar vídeo</LiquidButton>
+        <div class="flex gap-3">
+          <button
+            id="btn-discard"
+            type="button"
+            class="flex-1 rounded-full border border-line py-3 text-sm font-semibold text-ink-soft transition-colors hover:bg-black/5"
+          >
+            Descartar
+          </button>
+          <a
+            id="btn-library"
+            href="/grabaciones"
+            class="flex-1 rounded-full bg-ink py-3 text-center text-sm font-semibold text-paper transition-opacity hover:opacity-90"
+          >
+            Mis grabaciones
+          </a>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── Error de permisos ──────────────────────────────── -->
+    <section
+      id="permission-error"
+      class="absolute inset-0 z-40 hidden place-items-center bg-ink/95 px-8 text-center backdrop-blur-sm"
+    >
+      <div class="max-w-xs">
+        <div class="mx-auto grid h-14 w-14 place-items-center rounded-full bg-white/10 text-white">
+          <Icon name="video" size={26} />
+        </div>
+        <h2 class="mt-5 font-display text-[22px] font-bold text-white">No pudimos abrir la cámara</h2>
+        <p id="permission-message" class="mt-2 text-sm leading-relaxed text-white/70"></p>
+        <div class="mt-7 space-y-3">
+          <LiquidButton id="btn-retry" variant="brand">Reintentar</LiquidButton>
+          <a href="/editor" class="block text-sm font-medium text-white/60 hover:text-white">Volver al editor</a>
+        </div>
+      </div>
+    </section>
+  </main>
+</Base>
+
+<script>
+  import { gsap } from 'gsap';
+  import { Teleprompter } from '../lib/teleprompter';
+  import {
+    downloadBlob,
+    extensionFor,
+    formatDuration,
+    requestCamera,
+    slugify,
+    startRecording,
+    stopStream,
+    MediaError,
+    type RecorderHandle,
+  } from '../lib/media';
+  import { getActiveSpeechId, getSpeech, newId, saveRecording, updateSettings } from '../lib/store';
+  import { putBlob } from '../lib/db';
+  import { pulse, tapFeedback, toast } from '../lib/motion';
+  import { FONT_SIZE_RANGE, SPEED_RANGE } from '../lib/types';
+  import { Slider } from '../lib/slider';
+  import { maybe, need, onScreen } from '../lib/dom';
+
+  onScreen('stage', () => {
+    const stage = need('stage');
+    const video = need('camera', HTMLVideoElement);
+    const viewport = need('prompter-viewport');
+    const track = need('prompter-track');
+    const controlsPreview = need('controls-preview');
+    const controlsRecording = need('controls-recording');
+    const timerWrap = need('timer-wrap');
+    const timerEl = need('timer');
+    const progressRail = need('progress-rail');
+    const progressBar = need('progress-bar');
+    const reviewSheet = need('review-sheet');
+    const errorPanel = need('permission-error');
+
+    /* ── Guion ───────────────────────────────────────────── */
+
+    const requestedId = new URL(window.location.href).searchParams.get('id') ?? getActiveSpeechId();
+    const loaded = requestedId ? getSpeech(requestedId) : undefined;
+
+    if (!loaded || !loaded.body.trim()) {
+      // Sin guion no hay nada que leer: volvemos al editor en vez de mostrar
+      // una cámara vacía.
+      window.location.replace('/editor');
+      return;
+    }
+    const speech = loaded;
+
+    track.textContent = speech.body;
+    const editLink = maybe('btn-edit', HTMLAnchorElement);
+    if (editLink) editLink.href = `/editor?id=${speech.id}`;
+
+    const iconPlay = need('icon-play');
+    const iconPause = need('icon-pause');
+    const playBtn = need('btn-play', HTMLButtonElement);
+    const playLabel = need('play-label');
+
+    const prompter = new Teleprompter(viewport, track, { ...speech.settings }, {
+      onProgress: (ratio) => {
+        progressBar.style.width = `${ratio * 100}%`;
+      },
+      onEnd: () => toast('Llegaste al final del guion'),
+      onStateChange: (playing) => {
+        iconPlay.classList.toggle('hidden', playing);
+        iconPause.classList.toggle('hidden', !playing);
+        playLabel.textContent = playing ? 'Pausar texto' : 'Reanudar texto';
+        playBtn.setAttribute('aria-pressed', String(playing));
+        playBtn.setAttribute('aria-label', playing ? 'Pausar teleprompter' : 'Reproducir teleprompter');
+      },
+    });
+
+    /* ── Cámara ──────────────────────────────────────────── */
+
+    let stream: MediaStream | null = null;
+    let recorder: RecorderHandle | null = null;
+    let startedAt = 0;
+    let timerId = 0;
+    let pulseTween: gsap.core.Tween | null = null;
+    let lastBlob: Blob | null = null;
+    let lastDuration = 0;
+    let objectUrl: string | null = null;
+
+    async function openCamera(): Promise<void> {
+      try {
+        stream = await requestCamera({ facingMode: 'user', audio: true });
+        video.srcObject = stream;
+        await video.play().catch(() => {
+          /* Algunos navegadores exigen gesto del usuario; el autoplay muted suele bastar. */
+        });
+        errorPanel.classList.add('hidden');
+        errorPanel.classList.remove('grid');
+      } catch (error) {
+        const message =
+          error instanceof MediaError ? error.message : 'No pudimos iniciar la cámara. Inténtalo de nuevo.';
+        const target = maybe('permission-message');
+        if (target) target.textContent = message;
+        errorPanel.classList.remove('hidden');
+        errorPanel.classList.add('grid');
+      }
+    }
+
+    maybe('btn-retry')?.addEventListener('click', () => void openCamera());
+    void openCamera();
+
+    /* ── Cambio de estado ────────────────────────────────── */
+
+    function setState(state: 'preview' | 'recording' | 'review'): void {
+      stage.dataset.state = state;
+
+      controlsPreview.classList.toggle('hidden', state !== 'preview');
+      controlsRecording.classList.toggle('hidden', state !== 'recording');
+      viewport.classList.toggle('hidden', state !== 'recording');
+      viewport.classList.remove('opacity-45');
+      progressRail?.classList.toggle('hidden', state !== 'recording');
+      maybe('btn-mirror')?.classList.toggle('hidden', state !== 'recording');
+
+      timerWrap?.classList.toggle('hidden', state !== 'recording');
+      timerWrap?.classList.toggle('flex', state === 'recording');
+
+      // Un panel de ajustes abierto no debe sobrevivir al cambio de estado:
+      // taparía el encuadre o la hoja de revisión. (`showPanel` se declara más
+      // abajo; la declaración de función está izada y setState solo se invoca
+      // una vez montado todo.)
+      showPanel(null);
+
+      // El texto del teleprompter es decorativo para lectores de pantalla
+      // mientras no se está grabando.
+      viewport.setAttribute('aria-hidden', state === 'recording' ? 'false' : 'true');
+    }
+
+    /* ── Grabación ───────────────────────────────────────── */
+
+    function tickTimer(): void {
+      lastDuration = Date.now() - startedAt;
+      timerEl.textContent = formatDuration(lastDuration);
+    }
+
+    async function start(): Promise<void> {
+      if (!stream) {
+        await openCamera();
+        if (!stream) return;
+      }
+
+      try {
+        recorder = startRecording(stream);
+      } catch (error) {
+        toast(error instanceof Error ? error.message : 'No se pudo grabar.', 'error');
+        return;
+      }
+
+      startedAt = Date.now();
+      lastDuration = 0;
+      timerEl.textContent = '00:00';
+      timerId = window.setInterval(tickTimer, 250);
+
+      const dot = maybe('rec-dot');
+      if (dot) pulseTween = pulse(dot);
+
+      setState('recording');
+      prompter.restart();
+      // Un respiro antes de arrancar el texto: da tiempo a encuadrarse y respirar.
+      window.setTimeout(() => prompter.play(), 900);
+    }
+
+    async function stop(): Promise<void> {
+      if (!recorder) return;
+
+      prompter.pause();
+      window.clearInterval(timerId);
+      pulseTween?.kill();
+      pulseTween = null;
+
+      const duration = lastDuration;
+      let blob: Blob;
+      try {
+        blob = await recorder.stop();
+      } catch (error) {
+        toast(error instanceof Error ? error.message : 'La grabación falló.', 'error');
+        setState('preview');
+        return;
+      }
+      recorder = null;
+      lastBlob = blob;
+
+      // Guardamos los ajustes del prompter: la próxima toma arranca igual.
+      updateSettings(speech.id, prompter.current);
+
+      const recordingId = newId();
+      const blobKey = `rec-${recordingId}`;
+      let stored = true;
+      try {
+        await putBlob(blobKey, blob);
+      } catch {
+        // IndexedDB llena o bloqueada: la toma sigue disponible para descargar
+        // en esta sesión, pero no aparecerá en la lista.
+        stored = false;
+      }
+
+      if (stored) {
+        saveRecording({
+          id: recordingId,
+          speechId: speech.id,
+          title: speech.title || 'Speech sin título',
+          createdAt: Date.now(),
+          duration,
+          mimeType: blob.type,
+          size: blob.size,
+          blobKey,
+        });
+      } else {
+        toast('Sin espacio para guardarla. Descárgala ahora.', 'error');
+      }
+
+      showReview(blob, duration);
+    }
+
+    /* ── Revisión ────────────────────────────────────────── */
+
+    function showReview(blob: Blob, duration: number): void {
+      setState('review');
+
+      const player = maybe('review-player', HTMLVideoElement);
+      if (player) {
+        if (objectUrl) URL.revokeObjectURL(objectUrl);
+        objectUrl = URL.createObjectURL(blob);
+        player.src = objectUrl;
+      }
+
+      const meta = maybe('review-meta');
+      if (meta) {
+        const megabytes = (blob.size / (1024 * 1024)).toFixed(1);
+        meta.textContent = `${formatDuration(duration)} · ${megabytes} MB · ${extensionFor(blob.type).toUpperCase()}`;
+      }
+
+      reviewSheet.classList.remove('hidden');
+      gsap.fromTo(
+        reviewSheet,
+        { yPercent: 100 },
+        { yPercent: 0, duration: 0.5, ease: 'expo.out', clearProps: 'transform' },
+      );
+    }
+
+    maybe('btn-download')?.addEventListener('click', () => {
+      if (!lastBlob) return;
+      const name = `${slugify(speech.title || 'speech')}-${new Date().toISOString().slice(0, 10)}.${extensionFor(lastBlob.type)}`;
+      downloadBlob(lastBlob, name);
+      toast('Descarga iniciada');
+    });
+
+    maybe('btn-discard')?.addEventListener('click', () => {
+      lastBlob = null;
+      if (objectUrl) {
+        URL.revokeObjectURL(objectUrl);
+        objectUrl = null;
+      }
+      reviewSheet.classList.add('hidden');
+      setState('preview');
+      prompter.restart();
+    });
+
+    /* ── Controles ───────────────────────────────────────── */
+
+    maybe('btn-start')?.addEventListener('click', (event) => {
+      tapFeedback(event.currentTarget as Element);
+      void start();
+    });
+
+    maybe('btn-stop')?.addEventListener('click', (event) => {
+      tapFeedback(event.currentTarget as Element);
+      void stop();
+    });
+
+    maybe('btn-play')?.addEventListener('click', () => prompter.toggle());
+    maybe('btn-prev')?.addEventListener('click', () => prompter.step(-1));
+    maybe('btn-next')?.addEventListener('click', () => prompter.step(1));
+
+    /* ── Ajustes: velocidad y tamaño ─────────────────────── */
+
+    const readout = need('slider-readout');
+    const speedPanel = need('speed-slider');
+    const sizePanel = need('size-slider');
+
+    // Los mismos dos sliders sirven al encuadrar y al grabar, así que cada uno
+    // tiene un disparador por estado apuntando al mismo panel.
+    const speedTriggers = [maybe('btn-speed'), maybe('btn-speed-rec')].filter(
+      (el): el is HTMLElement => el !== null,
+    );
+    const sizeTriggers = [maybe('btn-textsize'), maybe('btn-textsize-rec')].filter(
+      (el): el is HTMLElement => el !== null,
+    );
+
+    /** La velocidad se muestra como multiplicador: 40 px/s es el ritmo base. */
+    const speedText = (value: number): string => `${(value / 40).toFixed(1)}×`;
+
+    const speedSlider = new Slider(speedPanel, {
+      variant: 'ticks',
+      min: SPEED_RANGE.min,
+      max: SPEED_RANGE.max,
+      step: SPEED_RANGE.step,
+      value: prompter.current.speed,
+      label: 'Velocidad del teleprompter',
+      format: speedText,
+      onInput: (value) => {
+        prompter.setSpeed(value);
+        readout.textContent = `Velocidad ${speedText(value)}`;
+      },
+      onCommit: () => updateSettings(speech.id, prompter.current),
+    });
+
+    const sizeSlider = new Slider(sizePanel, {
+      variant: 'fill',
+      min: FONT_SIZE_RANGE.min,
+      max: FONT_SIZE_RANGE.max,
+      step: FONT_SIZE_RANGE.step,
+      value: prompter.current.fontSize,
+      label: 'Tamaño del texto',
+      format: (value) => `${value} px`,
+      onInput: (value) => {
+        prompter.setFontSize(value);
+        readout.textContent = `Texto ${value} px`;
+      },
+      onCommit: () => updateSettings(speech.id, prompter.current),
+    });
+
+    type PanelName = 'speed' | 'size' | null;
+    let openPanel: PanelName = null;
+    let autoCloseTimer = 0;
+
+    function showPanel(name: PanelName): void {
+      window.clearTimeout(autoCloseTimer);
+      openPanel = name;
+
+      speedPanel.classList.toggle('hidden', name !== 'speed');
+      sizePanel.classList.toggle('hidden', name !== 'size');
+      readout.classList.toggle('hidden', name === null);
+
+      for (const trigger of speedTriggers) {
+        trigger.setAttribute('aria-expanded', String(name === 'speed'));
+        trigger.classList.toggle('bg-white/20', name === 'speed');
+      }
+      for (const trigger of sizeTriggers) {
+        trigger.setAttribute('aria-expanded', String(name === 'size'));
+        trigger.classList.toggle('bg-white/20', name === 'size');
+      }
+
+      if (name === 'speed') readout.textContent = `Velocidad ${speedSlider.text}`;
+      if (name === 'size') readout.textContent = `Texto ${sizeSlider.text}`;
+
+      // Al encuadrar el texto está oculto: lo mostramos atenuado mientras se
+      // ajusta para que el cambio de tamaño y ritmo se pueda juzgar de verdad.
+      const previewing = name !== null && stage.dataset.state === 'preview';
+      viewport.classList.toggle('hidden', !previewing && stage.dataset.state !== 'recording');
+      viewport.classList.toggle('opacity-45', previewing);
+
+      if (name !== null) {
+        // Se cierra solo: dejarlo abierto tapa el encuadre.
+        autoCloseTimer = window.setTimeout(() => showPanel(null), 4500);
+      }
+    }
+
+    /** Refleja en los sliders los cambios hechos por teclado. */
+    function syncSliders(): void {
+      speedSlider.sync(prompter.current.speed);
+      sizeSlider.sync(prompter.current.fontSize);
+      if (openPanel === 'speed') readout.textContent = `Velocidad ${speedSlider.text}`;
+      if (openPanel === 'size') readout.textContent = `Texto ${sizeSlider.text}`;
+    }
+
+    for (const trigger of speedTriggers) {
+      trigger.addEventListener('click', () => showPanel(openPanel === 'speed' ? null : 'speed'));
+    }
+    for (const trigger of sizeTriggers) {
+      trigger.addEventListener('click', () => showPanel(openPanel === 'size' ? null : 'size'));
+    }
+
+    // Cualquier toque fuera de los paneles los cierra.
+    stage.addEventListener('pointerdown', (event) => {
+      if (openPanel === null) return;
+      const target = event.target as HTMLElement;
+      if (target.closest('#speed-slider, #size-slider, [aria-expanded]')) return;
+      showPanel(null);
+    });
+
+    maybe('btn-mirror')?.addEventListener('click', (event) => {
+      const mirrored = !prompter.current.mirrored;
+      prompter.setMirrored(mirrored);
+      (event.currentTarget as HTMLElement).classList.toggle('bg-white/20', mirrored);
+    });
+
+    maybe('btn-exit')?.addEventListener('click', () => {
+      if (recorder) {
+        const leave = window.confirm('Estás grabando. ¿Seguro que quieres salir? Se perderá la toma.');
+        if (!leave) return;
+      }
+      window.location.href = `/editor?id=${speech.id}`;
+    });
+
+    /* ── Atajos de teclado ───────────────────────────────── */
+
+    document.addEventListener('keydown', (event) => {
+      const state = stage.dataset.state;
+      // Velocidad y tamaño se ajustan también al encuadrar; el transporte del
+      // texto (play, saltos) solo tiene sentido con el prompter en marcha.
+      if (state !== 'preview' && state !== 'recording') return;
+      if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) return;
+      // Las flechas sobre un slider enfocado ya las gestiona el propio slider.
+      if (event.target instanceof HTMLElement && event.target.getAttribute('role') === 'slider') return;
+
+      const recording = state === 'recording';
+
+      switch (event.key) {
+        case ' ':
+          if (!recording) return;
+          event.preventDefault();
+          prompter.toggle();
+          break;
+        case 'ArrowUp':
+          event.preventDefault();
+          prompter.bumpSpeed(SPEED_RANGE.step);
+          break;
+        case 'ArrowDown':
+          event.preventDefault();
+          prompter.bumpSpeed(-SPEED_RANGE.step);
+          break;
+        case 'ArrowLeft':
+          if (!recording) return;
+          prompter.step(-1);
+          break;
+        case 'ArrowRight':
+          if (!recording) return;
+          prompter.step(1);
+          break;
+        case '+':
+          prompter.bumpFontSize(FONT_SIZE_RANGE.step);
+          break;
+        case '-':
+          prompter.bumpFontSize(-FONT_SIZE_RANGE.step);
+          break;
+        default:
+          return;
+      }
+
+      syncSliders();
+    });
+
+    /* ── Limpieza ────────────────────────────────────────── */
+
+    const cleanup = (): void => {
+      prompter.destroy();
+      window.clearInterval(timerId);
+      pulseTween?.kill();
+      stopStream(stream);
+      stream = null;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+
+    // `astro:before-swap` cubre la navegación del ClientRouter; `pagehide`, el
+    // cierre de pestaña. Sin esto la luz de la cámara se queda encendida.
+    document.addEventListener('astro:before-swap', cleanup, { once: true });
+    window.addEventListener('pagehide', cleanup, { once: true });
+
+    setState('preview');
+  });
+</script>

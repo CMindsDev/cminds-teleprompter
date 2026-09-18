@@ -1,0 +1,208 @@
+/**
+ * Cámara, micrófono y grabación.
+ *
+ * Puntos delicados que este módulo resuelve:
+ * - `getUserMedia` solo existe en contexto seguro (https o localhost). Si no,
+ *   fallamos con un mensaje claro en vez de con un TypeError opaco.
+ * - Los códecs de MediaRecorder varían por navegador: probamos una lista en
+ *   orden de preferencia en lugar de asumir webm/vp9.
+ * - Las pistas hay que pararlas a mano o la luz de la cámara se queda encendida.
+ */
+
+export type MediaErrorKind =
+  | 'inseguro'
+  | 'no-soportado'
+  | 'denegado'
+  | 'sin-dispositivo'
+  | 'ocupado'
+  | 'desconocido';
+
+export class MediaError extends Error {
+  constructor(
+    readonly kind: MediaErrorKind,
+    message: string,
+  ) {
+    super(message);
+    this.name = 'MediaError';
+  }
+}
+
+const MESSAGES: Record<MediaErrorKind, string> = {
+  inseguro: 'La cámara requiere una conexión segura (https) o localhost.',
+  'no-soportado': 'Este navegador no permite acceder a la cámara.',
+  denegado: 'Permiso denegado. Habilita cámara y micrófono en los ajustes del navegador.',
+  'sin-dispositivo': 'No encontramos ninguna cámara o micrófono conectados.',
+  ocupado: 'Otra aplicación está usando la cámara. Ciérrala e inténtalo de nuevo.',
+  desconocido: 'No pudimos iniciar la cámara. Inténtalo de nuevo.',
+};
+
+function classify(error: unknown): MediaError {
+  const name = error instanceof Error ? error.name : '';
+  const kind: MediaErrorKind =
+    name === 'NotAllowedError' || name === 'SecurityError'
+      ? 'denegado'
+      : name === 'NotFoundError' || name === 'OverconstrainedError'
+        ? 'sin-dispositivo'
+        : name === 'NotReadableError' || name === 'AbortError'
+          ? 'ocupado'
+          : 'desconocido';
+  return new MediaError(kind, MESSAGES[kind]);
+}
+
+/** Estado del permiso sin pedirlo, cuando el navegador lo expone. */
+export async function permissionState(name: 'camera' | 'microphone'): Promise<PermissionState | 'unknown'> {
+  if (!navigator.permissions?.query) return 'unknown';
+  try {
+    const status = await navigator.permissions.query({ name: name as PermissionName });
+    return status.state;
+  } catch {
+    return 'unknown';
+  }
+}
+
+export interface CameraOptions {
+  facingMode?: 'user' | 'environment';
+  audio?: boolean;
+}
+
+/**
+ * Pide cámara + micrófono. Lanza `MediaError` con un motivo legible.
+ * La primera llamada dispara el diálogo de permisos del navegador.
+ */
+export async function requestCamera({ facingMode = 'user', audio = true }: CameraOptions = {}): Promise<MediaStream> {
+  if (typeof window === 'undefined') throw new MediaError('no-soportado', MESSAGES['no-soportado']);
+  if (!window.isSecureContext) throw new MediaError('inseguro', MESSAGES.inseguro);
+  if (!navigator.mediaDevices?.getUserMedia) throw new MediaError('no-soportado', MESSAGES['no-soportado']);
+
+  try {
+    return await navigator.mediaDevices.getUserMedia({
+      video: {
+        facingMode,
+        width: { ideal: 1080 },
+        height: { ideal: 1920 },
+        frameRate: { ideal: 30 },
+      },
+      audio: audio ? { echoCancellation: true, noiseSuppression: true } : false,
+    });
+  } catch (error) {
+    throw classify(error);
+  }
+}
+
+/** Apaga todas las pistas: sin esto el indicador de cámara sigue encendido. */
+export function stopStream(stream: MediaStream | null): void {
+  stream?.getTracks().forEach((track) => track.stop());
+}
+
+/** ¿Hay más de una cámara? Determina si mostramos el botón de girar. */
+export async function hasMultipleCameras(): Promise<boolean> {
+  if (!navigator.mediaDevices?.enumerateDevices) return false;
+  try {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    return devices.filter((d) => d.kind === 'videoinput').length > 1;
+  } catch {
+    return false;
+  }
+}
+
+/* ── Grabación ────────────────────────────────────────────── */
+
+/** En orden de preferencia: calidad, compatibilidad, último recurso. */
+const CODECS = [
+  'video/mp4;codecs=avc1.42E01E,mp4a.40.2', // Safari 17+ y Chrome reciente
+  'video/webm;codecs=vp9,opus',
+  'video/webm;codecs=vp8,opus',
+  'video/webm',
+  'video/mp4',
+];
+
+export function pickMimeType(): string {
+  if (typeof MediaRecorder === 'undefined') return '';
+  return CODECS.find((type) => MediaRecorder.isTypeSupported(type)) ?? '';
+}
+
+export function extensionFor(mimeType: string): string {
+  return mimeType.includes('mp4') ? 'mp4' : 'webm';
+}
+
+export interface RecorderHandle {
+  stop: () => Promise<Blob>;
+  pause: () => void;
+  resume: () => void;
+  readonly state: RecordingState;
+  readonly mimeType: string;
+}
+
+/**
+ * Arranca la grabación. `stop()` resuelve con el blob final.
+ * Se trocea cada segundo para que un fallo no se lleve toda la toma.
+ */
+export function startRecording(stream: MediaStream): RecorderHandle {
+  if (typeof MediaRecorder === 'undefined') {
+    throw new MediaError('no-soportado', 'Este navegador no puede grabar vídeo.');
+  }
+
+  const mimeType = pickMimeType();
+  const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+  const chunks: BlobPart[] = [];
+
+  recorder.ondataavailable = (event) => {
+    if (event.data.size > 0) chunks.push(event.data);
+  };
+  recorder.start(1000);
+
+  return {
+    get state() {
+      return recorder.state;
+    },
+    get mimeType() {
+      return recorder.mimeType || mimeType || 'video/webm';
+    },
+    pause: () => {
+      if (recorder.state === 'recording') recorder.pause();
+    },
+    resume: () => {
+      if (recorder.state === 'paused') recorder.resume();
+    },
+    stop: () =>
+      new Promise<Blob>((resolve, reject) => {
+        recorder.onerror = () => reject(new MediaError('desconocido', 'La grabación se interrumpió.'));
+        recorder.onstop = () => resolve(new Blob(chunks, { type: recorder.mimeType || mimeType || 'video/webm' }));
+        if (recorder.state === 'inactive') recorder.onstop?.(new Event('stop'));
+        else recorder.stop();
+      }),
+  };
+}
+
+/** Dispara la descarga de un blob con nombre legible. */
+export function downloadBlob(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  // Damos margen a que el navegador inicie la descarga antes de revocar.
+  window.setTimeout(() => URL.revokeObjectURL(url), 10_000);
+}
+
+/** `00:30` — formato del cronómetro de la pantalla de grabación. */
+export function formatDuration(ms: number): string {
+  const total = Math.max(0, Math.round(ms / 1000));
+  const minutes = Math.floor(total / 60);
+  const seconds = total % 60;
+  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+}
+
+export function slugify(value: string): string {
+  return (
+    value
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 60) || 'grabacion'
+  );
+}

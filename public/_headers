@@ -1,0 +1,7 @@
+# Netlify / Cloudflare Pages
+# Permissions-Policy autoriza cámara y micrófono en el propio origen.
+# Sin esta cabecera algunos navegadores bloquean getUserMedia en producción.
+/*
+  Permissions-Policy: camera=(self), microphone=(self), display-capture=(self)
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin

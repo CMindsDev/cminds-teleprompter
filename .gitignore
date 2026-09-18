@@ -1,0 +1,21 @@
+# build
+dist/
+.astro/
+.output/
+.vercel/
+.netlify/
+
+# deps
+node_modules/
+
+# entorno
+.env
+.env.production
+.env.local
+.env.*.local
+
+# sistema
+.DS_Store
+Thumbs.db
+*.log
+npm-debug.log*

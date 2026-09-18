@@ -1,0 +1,102 @@
+---
+/** Pantalla 1 — Portada. */
+import Base from '../layouts/Base.astro';
+import LiquidButton from '../components/LiquidButton.astro';
+---
+
+<Base title="Teleprompter · C MINDS" theme="dark" lockScroll>
+  <main class="app-shell relative overflow-hidden safe-top safe-bottom">
+    <!--
+      Degradado de la portada: un halo azul arriba que se apaga hacia el negro
+      corporativo. Dos capas en vez de un solo `radial-gradient` para que el
+      halo tenga un núcleo más brillante sin bandas visibles.
+    -->
+    <div class="pointer-events-none absolute inset-0 -z-10 bg-ink" aria-hidden="true">
+      <div
+        class="absolute -top-1/3 left-1/2 h-[80vh] w-[140%] -translate-x-1/2 rounded-full opacity-90 blur-[60px]"
+        style="background: radial-gradient(closest-side, #1f8fd6 0%, #0e5b93 38%, #0a2c4d 66%, transparent 100%)"
+      >
+      </div>
+      <div
+        class="absolute inset-0"
+        style="background: linear-gradient(180deg, transparent 0%, rgba(7,6,21,0.45) 45%, #070615 78%)"
+      >
+      </div>
+    </div>
+
+    <header class="px-8 pt-6" data-anim data-anim-order="0">
+      <img
+        id="brand-logo"
+        src="/assets/logo-cminds.svg"
+        alt="C MINDS"
+        width="126"
+        height="35"
+        class="h-[35px] w-auto"
+      />
+    </header>
+
+    <!-- El bloque de texto vive abajo: el halo respira en la mitad superior. -->
+    <div class="mt-auto px-8 pb-2">
+      <h1 class="font-display text-[56px] leading-[1.02] font-extrabold" data-anim data-anim-order="1">
+        Teleprompter
+      </h1>
+      <p class="mt-4 max-w-[19rem] text-[15px] leading-relaxed text-white/75" data-anim data-anim-order="2">
+        Dale voz a tus ideas: escribe, lee a tu ritmo y grábate siendo tú.
+      </p>
+    </div>
+
+    <div class="px-8 pt-8" data-anim data-anim-order="3">
+      <!--
+        `transition:name` hace que este botón sea el mismo elemento en la
+        pantalla siguiente: se desplaza en lugar de desaparecer y reaparecer.
+      -->
+      <LiquidButton
+        variant="glass"
+        liquid="onDark"
+        icon="teleprompt"
+        href="/editor"
+        transitionName="cta-principal"
+      >
+        Escribir prompt
+      </LiquidButton>
+
+      <a
+        href="/grabaciones"
+        class="mt-4 block text-center text-sm font-medium text-white/55 transition-colors hover:text-white"
+        data-anim
+        data-anim-order="4"
+      >
+        Ver mis grabaciones
+      </a>
+    </div>
+  </main>
+</Base>
+
+<script>
+  import { animateLogo } from '../lib/motion';
+
+  document.addEventListener('astro:page-load', () => {
+    const logo = document.getElementById('brand-logo');
+    if (!(logo instanceof HTMLImageElement)) return;
+
+    // El logo es un <img>: para animar sus puntos uno a uno hay que tener el
+    // SVG en el DOM, así que lo traemos y lo sustituimos en caliente.
+    fetch(logo.src)
+      .then((response) => response.text())
+      .then((markup) => {
+        const wrapper = document.createElement('div');
+        wrapper.innerHTML = markup;
+        const svg = wrapper.querySelector('svg');
+        if (!svg) return;
+
+        svg.setAttribute('class', logo.className);
+        svg.setAttribute('role', 'img');
+        svg.setAttribute('aria-label', 'C MINDS');
+        logo.replaceWith(svg);
+        animateLogo(svg as unknown as HTMLElement);
+      })
+      .catch(() => {
+        /* Sin red o SVG inaccesible: el <img> original se queda tal cual. */
+      });
+  });
+</script>

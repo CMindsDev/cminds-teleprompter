@@ -1,0 +1,171 @@
+@import "tailwindcss";
+
+/* ─────────────────────────────────────────────────────────────
+   Design tokens — C MINDS Teleprompter
+   Tailwind v4: el tema se declara en CSS, no en tailwind.config.
+   ───────────────────────────────────────────────────────────── */
+@theme {
+  /* Tipografía */
+  --font-sans: "Sora", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-display: "Parkinsans", "Sora", ui-sans-serif, system-ui, sans-serif;
+
+  /* Marca */
+  --color-brand-50: #e9f7fe;
+  --color-brand-100: #cdeefd;
+  --color-brand-200: #9cdcfb;
+  --color-brand-300: #63c7f8;
+  --color-brand-400: #31b4f5;
+  --color-brand-500: #10a7f3; /* azul C MINDS */
+  --color-brand-600: #0a86c7;
+  --color-brand-700: #0a6a9d;
+  --color-brand-800: #0d5679;
+  --color-brand-900: #0f4763;
+
+  /* Neutros */
+  --color-ink: #070615;      /* negro corporativo */
+  --color-ink-soft: #474747;
+  --color-paper: #fafafa;
+  --color-line: #e6e6e6;
+  --color-muted: #c7c7c7;
+
+  /* Semánticos */
+  --color-record: #f5163e;   /* botón de grabación */
+  --color-record-dark: #c2102f;
+
+  /* Radios */
+  --radius-pill: 999px;
+
+  /* Animación */
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out-quint: cubic-bezier(0.83, 0, 0.17, 1);
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Base
+   ───────────────────────────────────────────────────────────── */
+@layer base {
+  :root {
+    color-scheme: light;
+    /* Alto real del viewport en móvil (barra de direcciones dinámica) */
+    --app-vh: 100dvh;
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  body {
+    font-family: var(--font-sans);
+    background-color: var(--color-paper);
+    color: var(--color-ink);
+    margin: 0;
+    min-height: var(--app-vh);
+    overscroll-behavior-y: none;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  h1, h2, h3 {
+    font-family: var(--font-display);
+    letter-spacing: -0.02em;
+  }
+
+  /* Foco visible y consistente en todos los controles */
+  :where(a, button, input, textarea, [tabindex]):focus-visible {
+    outline: 2px solid var(--color-brand-500);
+    outline-offset: 3px;
+    border-radius: 6px;
+  }
+
+  /* El teleprompter y las transiciones respetan la preferencia del sistema */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Utilidades de app
+   ───────────────────────────────────────────────────────────── */
+@utility app-shell {
+  /* Lienzo tipo móvil centrado en escritorio */
+  width: 100%;
+  max-width: 430px;
+  margin-inline: auto;
+  min-height: var(--app-vh);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+@utility safe-bottom {
+  padding-bottom: max(1.5rem, env(safe-area-inset-bottom));
+}
+
+@utility safe-top {
+  padding-top: max(1rem, env(safe-area-inset-top));
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Liquid glass — capa CSS de respaldo
+   La refracción real la aplica LiquidClass (src/lib/liquid-glass).
+   Estas clases garantizan un botón correcto aunque el JS no cargue
+   o el navegador no soporte filtros SVG en backdrop-filter.
+   ───────────────────────────────────────────────────────────── */
+@layer components {
+  .liquid {
+    position: relative;
+    isolation: isolate;
+    border-radius: var(--radius-pill);
+    background-color: color-mix(in srgb, white 18%, transparent);
+    backdrop-filter: blur(12px) brightness(1.08) saturate(1.4);
+    -webkit-backdrop-filter: blur(12px) brightness(1.08) saturate(1.4);
+    box-shadow:
+      inset 4px 6px 0 -6px rgb(255 255 255 / 0.7),
+      inset 0 0 8px 1px rgb(255 255 255 / 0.55),
+      0 10px 30px -12px rgb(0 0 0 / 0.45);
+    transition:
+      transform 0.28s var(--ease-out-expo),
+      box-shadow 0.28s var(--ease-out-expo),
+      background-color 0.28s var(--ease-out-expo);
+  }
+
+  .liquid:hover:not(:disabled) {
+    transform: translateY(-1px);
+  }
+
+  .liquid:active:not(:disabled) {
+    transform: translateY(1px) scale(0.985);
+  }
+
+  /* Brillo especular que sigue al cursor (lo mueve liquid-glass/init.ts) */
+  .liquid::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    border-radius: inherit;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.3s var(--ease-out-expo);
+    background: radial-gradient(
+      120px circle at var(--liquid-x, 50%) var(--liquid-y, 50%),
+      rgb(255 255 255 / 0.35),
+      transparent 70%
+    );
+  }
+
+  .liquid:hover::after {
+    opacity: 1;
+  }
+
+  .liquid[data-liquid-ready="true"] {
+    /* LiquidClass ya pintó su filtro: retiramos el respaldo para no duplicar */
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}
