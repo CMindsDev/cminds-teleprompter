@@ -96,19 +96,28 @@ export async function requestCamera({
   if (!window.isSecureContext) throw new MediaError('inseguro', MESSAGES.inseguro);
   if (!navigator.mediaDevices?.getUserMedia) throw new MediaError('no-soportado', MESSAGES['no-soportado']);
 
-  const { width, height, ratio } = CAPTURE_FORMATS[format];
+  const { width, height } = CAPTURE_FORMATS[format];
 
   try {
     return await navigator.mediaDevices.getUserMedia({
       video: {
         facingMode,
+        // Se piden las dimensiones en vertical y **no** se pasa `aspectRatio`.
+        //
+        // Parece lo contrario de lo razonable, pero pedirlo rompe el móvil: el
+        // navegador publica las capacidades de la cámara en el espacio del
+        // sensor, que está montado en horizontal, así que el rango disponible
+        // va de 1.33 a 1.78. Un `aspectRatio: { ideal: 0.5625 }` no es
+        // alcanzable y se recorta al extremo más cercano del rango: 1.33, o
+        // sea 4:3 apaisado, que es el peor resultado posible.
+        //
+        // Sin esa restricción, los móviles que saben abrir el sensor en
+        // vertical lo hacen a partir de width/height, y los que no, entregan
+        // apaisado a buena resolución, que es justo lo que necesita el recorte
+        // posterior. La salida 1080×1920 la garantiza `composeVertical`, no la
+        // cámara.
         width: { ideal: width },
         height: { ideal: height },
-        // Pedir la relación explícitamente, y no solo la resolución, es lo que
-        // hace que los móviles entreguen el sensor en vertical. Es `ideal`, no
-        // `exact`: una webcam de escritorio solo da apaisado, y preferimos una
-        // cámara apaisada a un error de restricción imposible.
-        aspectRatio: { ideal: ratio },
         frameRate: { ideal: 30 },
       },
       audio: audio ? { echoCancellation: true, noiseSuppression: true } : false,
@@ -116,6 +125,14 @@ export async function requestCamera({
   } catch (error) {
     throw classify(error);
   }
+}
+
+/** Qué entrega la cámara de verdad. Se muestra con `/grabar?debug=1`. */
+export function describeStream(stream: MediaStream, video?: HTMLVideoElement): string {
+  const settings = stream.getVideoTracks()[0]?.getSettings();
+  const pista = settings?.width && settings.height ? `${settings.width}×${settings.height}` : '—';
+  const pintado = video?.videoWidth ? `${video.videoWidth}×${video.videoHeight}` : '—';
+  return `pista ${pista} · vídeo ${pintado}`;
 }
 
 /**
@@ -150,6 +167,103 @@ export async function hasMultipleCameras(): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+/* ── Composición vertical ─────────────────────────────────── */
+
+export interface Composer {
+  /** Pista de vídeo 1080×1920 + audio original, lista para MediaRecorder. */
+  stream: MediaStream;
+  width: number;
+  height: number;
+  stop(): void;
+}
+
+/**
+ * Recompone la cámara en un lienzo del tamaño exacto del formato (1080×1920).
+ *
+ * Por qué hace falta: ninguna restricción de `getUserMedia` obliga a una cámara
+ * a entregar vertical. Muchos móviles Android y iOS abren el sensor en
+ * horizontal (4:3 o 16:9) y no hay forma de impedirlo desde la web. Grabar esa
+ * pista tal cual produce un archivo apaisado por mucho que la interfaz enseñe
+ * un marco vertical.
+ *
+ * Dibujando cada fotograma recortado al centro sobre un lienzo de 1080×1920 y
+ * grabando `canvas.captureStream()`, la salida es la pedida **siempre**, dé lo
+ * que dé la cámara. El recorte es el mismo que aplica `object-cover` en la
+ * vista previa, así que lo que se ve es lo que se graba.
+ *
+ * Devuelve `null` si el navegador no sabe capturar un lienzo; quien llama debe
+ * seguir con la pista original.
+ */
+export function composeVertical(
+  video: HTMLVideoElement,
+  source: MediaStream,
+  format: CaptureFormat = DEFAULT_FORMAT,
+): Composer | null {
+  const { width, height } = CAPTURE_FORMATS[format];
+
+  const canvas = document.createElement('canvas');
+  if (typeof canvas.captureStream !== 'function') return null;
+
+  canvas.width = width;
+  canvas.height = height;
+
+  const context = canvas.getContext('2d', { alpha: false });
+  if (!context) return null;
+
+  // Safari antiguo exige que el lienzo esté en el documento para capturarlo.
+  // El tamaño CSS no toca el búfer de dibujo, así que 1px es suficiente.
+  canvas.setAttribute('aria-hidden', 'true');
+  canvas.style.cssText = 'position:fixed;left:-1px;top:-1px;width:1px;height:1px;opacity:0;pointer-events:none';
+  document.body.appendChild(canvas);
+
+  const targetRatio = width / height;
+  let running = true;
+  let rafId = 0;
+  let frameId = 0;
+
+  const draw = (): void => {
+    const sw = video.videoWidth;
+    const sh = video.videoHeight;
+    if (sw && sh) {
+      // Recorte centrado, idéntico a `object-cover`.
+      const sourceRatio = sw / sh;
+      const cropW = sourceRatio > targetRatio ? sh * targetRatio : sw;
+      const cropH = sourceRatio > targetRatio ? sh : sw / targetRatio;
+      context.drawImage(video, (sw - cropW) / 2, (sh - cropH) / 2, cropW, cropH, 0, 0, width, height);
+    }
+  };
+
+  // `requestVideoFrameCallback` dibuja exactamente una vez por fotograma nuevo;
+  // con rAF se repintaría de más y se gastaría batería sin ganar nada.
+  const useFrameCallback = typeof video.requestVideoFrameCallback === 'function';
+
+  const loop = (): void => {
+    if (!running) return;
+    draw();
+    if (useFrameCallback) frameId = video.requestVideoFrameCallback(loop);
+    else rafId = requestAnimationFrame(loop);
+  };
+  loop();
+
+  const stream = new MediaStream();
+  for (const track of canvas.captureStream(30).getVideoTracks()) stream.addTrack(track);
+  for (const track of source.getAudioTracks()) stream.addTrack(track);
+
+  return {
+    stream,
+    width,
+    height,
+    stop(): void {
+      running = false;
+      if (useFrameCallback) video.cancelVideoFrameCallback?.(frameId);
+      else cancelAnimationFrame(rafId);
+      // Solo las pistas del lienzo: el audio y la cámara los gestiona quien llama.
+      stream.getVideoTracks().forEach((track) => track.stop());
+      canvas.remove();
+    },
+  };
 }
 
 /* ── Grabación ────────────────────────────────────────────── */
