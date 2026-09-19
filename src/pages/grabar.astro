@@ -320,7 +320,7 @@ import Icon from '../components/Icon.astro';
         <p id="permission-message" class="mt-2 text-sm leading-relaxed text-white/70"></p>
         <div class="mt-7 space-y-3">
           <LiquidButton id="btn-retry" variant="brand">Reintentar</LiquidButton>
-          <a href="/editor" class="block text-sm font-medium text-white/60 hover:text-white">Volver al editor</a>
+          <a id="permission-edit-link" href="/editor" class="block text-sm font-medium text-white/60 hover:text-white">Volver al editor</a>
         </div>
       </div>
     </section>
@@ -403,6 +403,8 @@ import Icon from '../components/Icon.astro';
     track.textContent = speech.body;
     const editLink = maybe('btn-edit', HTMLAnchorElement);
     if (editLink) editLink.href = `/editor?id=${speech.id}`;
+    const permissionEditLink = maybe('permission-edit-link', HTMLAnchorElement);
+    if (permissionEditLink) permissionEditLink.href = `/editor?id=${speech.id}`;
 
     const iconPlay = need('icon-play');
     const iconPause = need('icon-pause');

@@ -76,7 +76,7 @@ import Icon from '../components/Icon.astro';
 </Base>
 
 <script>
-  import { getActiveSpeechId, getSpeech, createSpeech, saveSpeech, setActiveSpeechId } from '../lib/store';
+  import { getSpeech, createSpeech, saveSpeech, setActiveSpeechId } from '../lib/store';
   import { tapFeedback, toast } from '../lib/motion';
   import { maybe, need, onScreen } from '../lib/dom';
   import type { Speech } from '../lib/types';
@@ -102,23 +102,18 @@ import Icon from '../components/Icon.astro';
 
     /* ── Carga del guion ─────────────────────────────────── */
 
-    // `?id=` permite editar un guion existente desde la lista de grabaciones.
-    const requestedId = new URL(window.location.href).searchParams.get('id') ?? getActiveSpeechId();
+    // Sin id se crea un guion vacío; solo un id explícito abre uno existente.
+    const editorUrl = new URL(window.location.href);
+    const requestedId = editorUrl.searchParams.get('id');
     const speech: Speech = (requestedId ? getSpeech(requestedId) : undefined) ?? createSpeech();
     setActiveSpeechId(speech.id);
+    // Recargar o volver a esta entrada del historial conserva este borrador.
+    editorUrl.searchParams.set('id', speech.id);
+    window.history.replaceState(window.history.state, '', editorUrl);
 
-    // El HTML se pinta antes de que llegue este script, así que el usuario
-    // puede haber empezado a escribir ya (o el navegador haber restaurado el
-    // formulario). Volcamos el guion guardado, pero nunca encima de texto que
-    // ya esté en el campo: perder lo recién tecleado es peor que no restaurar.
-    const restore = (field: HTMLInputElement | HTMLTextAreaElement, stored: string): boolean => {
-      if (!stored && field.value) return true; // hay que conservar lo escrito
-      field.value = stored;
-      return false;
-    };
-
-    const keptTitle = restore(titleEl, speech.title);
-    const keptBody = restore(bodyEl, speech.body);
+    // Sobrescribir también los valores que el navegador pudiera restaurar.
+    titleEl.value = speech.title;
+    bodyEl.value = speech.body;
 
     /* ── Historial ───────────────────────────────────────── */
 
@@ -283,13 +278,6 @@ import Icon from '../components/Icon.astro';
 
     syncUi();
     syncHistoryButtons();
-
-    // Lo que se escribió antes de que cargara el script todavía no está en el
-    // historial ni guardado: lo incorporamos ahora.
-    if (keptTitle || keptBody) {
-      past = [{ title: titleEl.value, body: bodyEl.value }];
-      queueSave();
-    }
 
     if (!bodyEl.value) bodyEl.focus();
   });
