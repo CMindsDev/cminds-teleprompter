@@ -47,6 +47,12 @@ export const getBlob = (key: string): Promise<Blob | undefined> =>
 export const deleteBlob = (key: string): Promise<undefined> =>
   tx('readwrite', (store) => store.delete(key));
 
+/** Claves guardadas. Sirve para detectar vídeos sin ficha que los reclame. */
+export const listBlobKeys = (): Promise<string[]> =>
+  tx('readonly', (store) => store.getAllKeys() as IDBRequest<IDBValidKey[]>).then((keys) =>
+    keys.map(String),
+  );
+
 /** Espacio usado y disponible, para avisar antes de que falle una grabación. */
 export async function storageEstimate(): Promise<{ usage: number; quota: number } | null> {
   if (!navigator.storage?.estimate) return null;

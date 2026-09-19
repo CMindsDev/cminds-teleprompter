@@ -13,8 +13,13 @@ import Icon from '../components/Icon.astro';
 ---
 
 <Base title="Escribe tu speech · Teleprompter" theme="light">
-  <main id="editor-screen" class="app-shell px-6 safe-top safe-bottom">
-    <header class="flex items-center justify-between gap-2 py-2" data-anim data-anim-order="0">
+  <!--
+    La pantalla no se desplaza: lo que se desplaza es el textarea. Así el botón
+    y la barra de deshacer siguen a la vista por largo que sea el speech, sin
+    recurrir a `position: fixed` (que el teclado del móvil desplaza o tapa).
+  -->
+  <main id="editor-screen" class="app-shell h-[var(--app-vh)] overflow-hidden px-6 safe-top safe-bottom">
+    <header class="flex shrink-0 items-center justify-between gap-2 py-2" data-anim data-anim-order="0">
       <IconButton icon="arrow-back" label="Volver" href="/" iconSize={24} />
 
       <div class="flex items-center gap-2">
@@ -38,25 +43,31 @@ import Icon from '../components/Icon.astro';
         placeholder="Título del speech"
         maxlength="80"
         autocomplete="off"
-        class="w-full bg-transparent text-[13px] font-semibold tracking-tight text-ink-soft placeholder:text-ink-soft/55 focus:outline-none"
+        class="w-full shrink-0 bg-transparent text-[13px] font-semibold tracking-tight text-ink-soft placeholder:text-ink-soft/55 focus:outline-none"
       />
 
       <label for="speech-body" class="sr-only">Texto del speech</label>
       <!--
-        `field-sizing: content` hace crecer el textarea con el texto en Chrome;
-        el script replica el mismo comportamiento donde no está soportado.
+        El textarea es el único que se desplaza. `min-h-0` es imprescindible:
+        sin él un hijo flexible se niega a encoger por debajo de su contenido y
+        el texto volvería a empujar al botón fuera de la pantalla.
       -->
       <textarea
         id="speech-body"
         placeholder="Comienza a escribir"
-        rows="1"
-        class="mt-3 w-full flex-1 resize-none bg-transparent font-display text-[34px] leading-[1.15] font-bold tracking-tight text-ink placeholder:text-muted focus:outline-none"
-        style="field-sizing: content"></textarea>
+        class="mt-3 w-full min-h-0 flex-1 resize-none overflow-y-auto bg-transparent font-display text-[34px] leading-[1.15] font-bold tracking-tight text-ink placeholder:text-muted focus:outline-none"
+      ></textarea>
 
-      <p id="word-count" class="pt-4 text-xs text-ink-soft/60 tabular-nums"></p>
+      <p id="word-count" class="shrink-0 pt-3 text-xs text-ink-soft/60 tabular-nums"></p>
     </div>
 
-    <div class="pt-6" data-anim data-anim-order="2">
+    <div class="relative shrink-0 pt-4" data-anim data-anim-order="2">
+      <!-- Difumina la última línea al pasar tras el botón, en vez de cortarla. -->
+      <div
+        class="pointer-events-none absolute inset-x-0 -top-6 h-6 bg-gradient-to-t from-paper to-transparent"
+        aria-hidden="true"
+      >
+      </div>
       <LiquidButton id="btn-record" variant="muted" icon="record" disabled transitionName="cta-principal">
         Grabar ahora
       </LiquidButton>
@@ -96,8 +107,18 @@ import Icon from '../components/Icon.astro';
     const speech: Speech = (requestedId ? getSpeech(requestedId) : undefined) ?? createSpeech();
     setActiveSpeechId(speech.id);
 
-    titleEl.value = speech.title;
-    bodyEl.value = speech.body;
+    // El HTML se pinta antes de que llegue este script, así que el usuario
+    // puede haber empezado a escribir ya (o el navegador haber restaurado el
+    // formulario). Volcamos el guion guardado, pero nunca encima de texto que
+    // ya esté en el campo: perder lo recién tecleado es peor que no restaurar.
+    const restore = (field: HTMLInputElement | HTMLTextAreaElement, stored: string): boolean => {
+      if (!stored && field.value) return true; // hay que conservar lo escrito
+      field.value = stored;
+      return false;
+    };
+
+    const keptTitle = restore(titleEl, speech.title);
+    const keptBody = restore(bodyEl, speech.body);
 
     /* ── Historial ───────────────────────────────────────── */
 
@@ -130,7 +151,6 @@ import Icon from '../components/Icon.astro';
       titleEl.value = state.title;
       bodyEl.value = state.body;
       replaying = false;
-      autoGrow();
       syncUi();
       queueSave();
     }
@@ -183,7 +203,7 @@ import Icon from '../components/Icon.astro';
         const ok = saveSpeech({ ...speech, title: titleEl.value, body: bodyEl.value });
         if (!ok) {
           showSaveState('idle');
-          toast('No pudimos guardar: almacenamiento lleno.', 'error');
+          toast('No pudimos guardar: almacenamiento lleno.', { tone: 'error' });
           return;
         }
         showSaveState('saved');
@@ -194,12 +214,6 @@ import Icon from '../components/Icon.astro';
     }
 
     /* ── Interfaz reactiva ───────────────────────────────── */
-
-    function autoGrow(): void {
-      if (CSS.supports('field-sizing', 'content')) return;
-      bodyEl.style.height = 'auto';
-      bodyEl.style.height = `${bodyEl.scrollHeight}px`;
-    }
 
     function syncUi(): void {
       const hasText = bodyEl.value.trim().length > 0;
@@ -226,7 +240,6 @@ import Icon from '../components/Icon.astro';
 
     for (const field of [titleEl, bodyEl]) {
       field.addEventListener('input', () => {
-        autoGrow();
         syncUi();
         pushHistory();
         queueSave();
@@ -268,9 +281,16 @@ import Icon from '../components/Icon.astro';
       }
     });
 
-    autoGrow();
     syncUi();
     syncHistoryButtons();
+
+    // Lo que se escribió antes de que cargara el script todavía no está en el
+    // historial ni guardado: lo incorporamos ahora.
+    if (keptTitle || keptBody) {
+      past = [{ title: titleEl.value, body: bodyEl.value }];
+      queueSave();
+    }
+
     if (!bodyEl.value) bodyEl.focus();
   });
 </script>

@@ -5,7 +5,7 @@
  * Tres estados sobre el mismo vídeo en vivo:
  *   preview    → encuadre, botón "Iniciar grabación"
  *   recording  → cronómetro, texto desplazándose, barra de controles
- *   review     → hoja inferior con la toma: reproducir, descargar, guardar
+ *   review     → el clip a pantalla completa: verlo, repetirlo o guardarlo
  */
 import Base from '../layouts/Base.astro';
 import IconButton from '../components/IconButton.astro';
@@ -14,14 +14,35 @@ import Icon from '../components/Icon.astro';
 ---
 
 <Base title="Grabar · Teleprompter" theme="video" lockScroll>
-  <main class="app-shell relative overflow-hidden bg-black" data-state="preview" id="stage">
-    <!-- Cámara. `mirrored` refleja la vista previa, no el archivo grabado. -->
-    <video
-      id="camera"
-      class="absolute inset-0 h-full w-full scale-x-[-1] object-cover"
-      playsinline
-      autoplay
-      muted></video>
+  <!--
+    `--capture-aspect` es la única definición de la relación de aspecto: la
+    comparten el encuadre, la revisión y las restricciones de `getUserMedia`.
+    El futuro selector de formato solo tendrá que cambiar esta variable.
+  -->
+  <main
+    class="app-shell relative overflow-hidden bg-black"
+    style="--capture-aspect: 9 / 16"
+    data-state="preview"
+    id="stage"
+  >
+    <!--
+      Marco de captura: vertical y centrado, con bandas negras si la pantalla
+      es más alargada. Antes el vídeo llenaba la pantalla con `object-cover`, de
+      modo que en móviles altos se veía un recorte de lo que en realidad se
+      estaba grabando. Ahora el encuadre es lo que se graba.
+    -->
+    <div
+      id="capture-frame"
+      class="absolute inset-0 m-auto aspect-[var(--capture-aspect)] max-h-full max-w-full"
+    >
+      <!-- `scale-x-[-1]` refleja la vista previa, no el archivo grabado. -->
+      <video
+        id="camera"
+        class="h-full w-full scale-x-[-1] object-cover"
+        playsinline
+        autoplay
+        muted></video>
+    </div>
 
     <!-- Degradados: mantienen legibles los controles sobre cualquier encuadre. -->
     <div
@@ -36,7 +57,12 @@ import Icon from '../components/Icon.astro';
     </div>
 
     <!-- ── Barra superior ─────────────────────────────────── -->
-    <header class="relative z-20 flex items-center justify-between px-6 safe-top" data-anim data-anim-order="0">
+    <header
+      id="stage-header"
+      class="relative z-20 flex items-center justify-between px-6 safe-top"
+      data-anim
+      data-anim-order="0"
+    >
       <IconButton
         id="btn-exit"
         icon="arrow-back"
@@ -179,7 +205,7 @@ import Icon from '../components/Icon.astro';
             id="btn-stop"
             type="button"
             class="grid h-[62px] w-[62px] place-items-center rounded-full bg-record text-white shadow-lg shadow-record/40 transition-transform duration-200 hover:scale-105 active:scale-95"
-            aria-label="Detener y guardar"
+            aria-label="Detener la grabación"
           >
             <span class="block h-[22px] w-[22px] rounded-[5px] bg-white"></span>
           </button>
@@ -223,43 +249,57 @@ import Icon from '../components/Icon.astro';
       </div>
     </footer>
 
-    <!-- ── Hoja de revisión ───────────────────────────────── -->
+    <!-- ── Revisión del clip ──────────────────────────────── -->
+    <!--
+      Ocupa toda la pantalla, como el encuadre: la toma se revisa al mismo
+      tamaño con el que se grabó, no dentro de una ventanita.
+    -->
     <section
-      id="review-sheet"
-      class="absolute inset-x-0 bottom-0 z-30 hidden translate-y-full rounded-t-[28px] bg-paper px-6 pt-5 text-ink safe-bottom"
+      id="review-layer"
+      class="absolute inset-0 z-30 hidden"
       role="dialog"
       aria-modal="true"
-      aria-labelledby="review-title"
+      aria-label="Revisar la grabación"
     >
-      <div class="mx-auto mb-4 h-1 w-10 rounded-full bg-black/15"></div>
-      <h2 id="review-title" class="font-display text-[22px] font-bold">Tu grabación está lista</h2>
-      <p id="review-meta" class="mt-1 text-sm text-ink-soft tabular-nums"></p>
-
-      <video
-        id="review-player"
-        class="mt-4 aspect-[9/16] max-h-[38vh] w-full rounded-2xl bg-black object-contain"
-        controls
-        playsinline></video>
-
-      <div class="mt-5 space-y-3">
-        <LiquidButton id="btn-download" variant="brand" icon="download">Descargar vídeo</LiquidButton>
-        <div class="flex gap-3">
-          <button
-            id="btn-discard"
-            type="button"
-            class="flex-1 rounded-full border border-line py-3 text-sm font-semibold text-ink-soft transition-colors hover:bg-black/5"
-          >
-            Descartar
-          </button>
-          <a
-            id="btn-library"
-            href="/grabaciones"
-            class="flex-1 rounded-full bg-ink py-3 text-center text-sm font-semibold text-paper transition-opacity hover:opacity-90"
-          >
-            Mis grabaciones
-          </a>
-        </div>
+      <!-- Mismo marco que el encuadre: la revisión enseña lo que se grabó. -->
+      <div class="absolute inset-0 m-auto aspect-[var(--capture-aspect)] max-h-full max-w-full">
+        <video id="review-player" class="h-full w-full bg-black object-contain" playsinline></video>
       </div>
+
+      <div
+        class="pointer-events-none absolute inset-x-0 top-0 h-40 bg-gradient-to-b from-black/55 to-transparent"
+        aria-hidden="true"
+      >
+      </div>
+      <div
+        class="pointer-events-none absolute inset-x-0 bottom-0 h-56 bg-gradient-to-t from-black/70 to-transparent"
+        aria-hidden="true"
+      >
+      </div>
+
+      <header class="relative z-10 flex items-center justify-between px-6 safe-top">
+        <IconButton
+          id="btn-discard"
+          icon="arrow-back"
+          label="Descartar la toma"
+          iconSize={24}
+          class="text-white hover:bg-white/15"
+        />
+
+        <span id="review-duration" class="font-display text-[17px] font-semibold tabular-nums text-white">00:00</span>
+
+        <button
+          id="btn-replay"
+          type="button"
+          class="rounded-full border border-white/45 px-4 py-1.5 text-sm font-medium text-white backdrop-blur-sm transition-colors hover:bg-white/15"
+        >
+          Repetir
+        </button>
+      </header>
+
+      <footer class="absolute inset-x-0 bottom-0 z-10 px-6 pb-2 safe-bottom">
+        <LiquidButton id="btn-save" variant="brand" icon="archive">Guardar video</LiquidButton>
+      </footer>
     </section>
 
     <!-- ── Error de permisos ──────────────────────────────── -->
@@ -293,11 +333,15 @@ import Icon from '../components/Icon.astro';
     slugify,
     startRecording,
     stopStream,
+    trackAspectRatio,
+    CAPTURE_FORMATS,
+    DEFAULT_FORMAT,
     MediaError,
     type RecorderHandle,
   } from '../lib/media';
   import { getActiveSpeechId, getSpeech, newId, saveRecording, updateSettings } from '../lib/store';
-  import { putBlob } from '../lib/db';
+  import { deleteBlob, putBlob } from '../lib/db';
+  import { captureFrame, rectOf, stashFlight } from '../lib/flight';
   import { pulse, tapFeedback, toast } from '../lib/motion';
   import { FONT_SIZE_RANGE, SPEED_RANGE } from '../lib/types';
   import { Slider } from '../lib/slider';
@@ -314,7 +358,10 @@ import Icon from '../components/Icon.astro';
     const timerEl = need('timer');
     const progressRail = need('progress-rail');
     const progressBar = need('progress-bar');
-    const reviewSheet = need('review-sheet');
+    const stageHeader = need('stage-header');
+    const reviewLayer = need('review-layer');
+    const reviewPlayer = need('review-player', HTMLVideoElement);
+    const reviewDuration = need('review-duration');
     const errorPanel = need('permission-error');
 
     /* ── Guion ───────────────────────────────────────────── */
@@ -360,14 +407,35 @@ import Icon from '../components/Icon.astro';
     let startedAt = 0;
     let timerId = 0;
     let pulseTween: gsap.core.Tween | null = null;
+    /** Toma pendiente de guardar. Mientras no sea `null`, salir la pierde. */
     let lastBlob: Blob | null = null;
     let lastDuration = 0;
     let objectUrl: string | null = null;
+    /** Evita guardar dos veces si se toca el botón repetidamente. */
+    let saving = false;
+
+    /**
+     * Ajusta el marco a lo que la cámara entrega de verdad.
+     *
+     * Se pide vertical y los móviles lo dan, pero una webcam de escritorio solo
+     * sabe hacer apaisado. Forzar el marco vertical ahí enseñaría un recorte que
+     * no se corresponde con el archivo: justo el desajuste que esto viene a
+     * arreglar. Si el sensor no da lo pedido, manda el sensor.
+     */
+    function syncCaptureAspect(active: MediaStream): void {
+      const real = trackAspectRatio(active);
+      if (real === null) return;
+
+      const wanted = CAPTURE_FORMATS[DEFAULT_FORMAT].ratio;
+      const css = Math.abs(real - wanted) < 0.02 ? CAPTURE_FORMATS[DEFAULT_FORMAT].css : String(real);
+      stage.style.setProperty('--capture-aspect', css);
+    }
 
     async function openCamera(): Promise<void> {
       try {
-        stream = await requestCamera({ facingMode: 'user', audio: true });
+        stream = await requestCamera({ facingMode: 'user', audio: true, format: DEFAULT_FORMAT });
         video.srcObject = stream;
+        syncCaptureAspect(stream);
         await video.play().catch(() => {
           /* Algunos navegadores exigen gesto del usuario; el autoplay muted suele bastar. */
         });
@@ -390,6 +458,11 @@ import Icon from '../components/Icon.astro';
 
     function setState(state: 'preview' | 'recording' | 'review'): void {
       stage.dataset.state = state;
+
+      // En revisión manda la capa del clip: la barra y los controles del
+      // encuadre desaparecen para no competir con ella.
+      stageHeader.classList.toggle('hidden', state === 'review');
+      reviewLayer.classList.toggle('hidden', state !== 'review');
 
       controlsPreview.classList.toggle('hidden', state !== 'preview');
       controlsRecording.classList.toggle('hidden', state !== 'recording');
@@ -428,7 +501,7 @@ import Icon from '../components/Icon.astro';
       try {
         recorder = startRecording(stream);
       } catch (error) {
-        toast(error instanceof Error ? error.message : 'No se pudo grabar.', 'error');
+        toast(error instanceof Error ? error.message : 'No se pudo grabar.', { tone: 'error' });
         return;
       }
 
@@ -459,7 +532,7 @@ import Icon from '../components/Icon.astro';
       try {
         blob = await recorder.stop();
       } catch (error) {
-        toast(error instanceof Error ? error.message : 'La grabación falló.', 'error');
+        toast(error instanceof Error ? error.message : 'La grabación falló.', { tone: 'error' });
         setState('preview');
         return;
       }
@@ -467,33 +540,9 @@ import Icon from '../components/Icon.astro';
       lastBlob = blob;
 
       // Guardamos los ajustes del prompter: la próxima toma arranca igual.
+      // La grabación en sí NO se persiste todavía: eso lo decide el usuario en
+      // la pantalla de revisión, o «Guardar video» no significaría nada.
       updateSettings(speech.id, prompter.current);
-
-      const recordingId = newId();
-      const blobKey = `rec-${recordingId}`;
-      let stored = true;
-      try {
-        await putBlob(blobKey, blob);
-      } catch {
-        // IndexedDB llena o bloqueada: la toma sigue disponible para descargar
-        // en esta sesión, pero no aparecerá en la lista.
-        stored = false;
-      }
-
-      if (stored) {
-        saveRecording({
-          id: recordingId,
-          speechId: speech.id,
-          title: speech.title || 'Speech sin título',
-          createdAt: Date.now(),
-          duration,
-          mimeType: blob.type,
-          size: blob.size,
-          blobKey,
-        });
-      } else {
-        toast('Sin espacio para guardarla. Descárgala ahora.', 'error');
-      }
 
       showReview(blob, duration);
     }
@@ -503,43 +552,112 @@ import Icon from '../components/Icon.astro';
     function showReview(blob: Blob, duration: number): void {
       setState('review');
 
-      const player = maybe('review-player', HTMLVideoElement);
-      if (player) {
-        if (objectUrl) URL.revokeObjectURL(objectUrl);
-        objectUrl = URL.createObjectURL(blob);
-        player.src = objectUrl;
-      }
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+      objectUrl = URL.createObjectURL(blob);
+      reviewPlayer.src = objectUrl;
+      reviewPlayer.currentTime = 0;
+      void reviewPlayer.play().catch(() => {
+        /* Si el navegador bloquea la reproducción, «Repetir» la arranca. */
+      });
 
-      const meta = maybe('review-meta');
-      if (meta) {
-        const megabytes = (blob.size / (1024 * 1024)).toFixed(1);
-        meta.textContent = `${formatDuration(duration)} · ${megabytes} MB · ${extensionFor(blob.type).toUpperCase()}`;
-      }
+      reviewDuration.textContent = formatDuration(duration);
 
-      reviewSheet.classList.remove('hidden');
-      gsap.fromTo(
-        reviewSheet,
-        { yPercent: 100 },
-        { yPercent: 0, duration: 0.5, ease: 'expo.out', clearProps: 'transform' },
-      );
+      // `setState` ya mostró la capa; aquí solo la hacemos entrar.
+      gsap.from(reviewLayer, { autoAlpha: 0, duration: 0.35, ease: 'power2.out' });
     }
 
-    maybe('btn-download')?.addEventListener('click', () => {
-      if (!lastBlob) return;
-      const name = `${slugify(speech.title || 'speech')}-${new Date().toISOString().slice(0, 10)}.${extensionFor(lastBlob.type)}`;
-      downloadBlob(lastBlob, name);
-      toast('Descarga iniciada');
+    /** Tocar el vídeo pausa o reanuda: sin controles nativos encima del clip. */
+    reviewPlayer.addEventListener('click', () => {
+      reviewPlayer.paused ? void reviewPlayer.play() : reviewPlayer.pause();
     });
 
-    maybe('btn-discard')?.addEventListener('click', () => {
+    maybe('btn-replay')?.addEventListener('click', () => {
+      reviewPlayer.currentTime = 0;
+      void reviewPlayer.play();
+    });
+
+    function discardTake(): void {
       lastBlob = null;
+      reviewPlayer.pause();
+      reviewPlayer.removeAttribute('src');
+      reviewPlayer.load();
       if (objectUrl) {
         URL.revokeObjectURL(objectUrl);
         objectUrl = null;
       }
-      reviewSheet.classList.add('hidden');
-      setState('preview');
+      setState('preview'); // oculta la capa de revisión
       prompter.restart();
+    }
+
+    maybe('btn-discard')?.addEventListener('click', () => {
+      if (!window.confirm('¿Descartar esta toma? No se guardará.')) return;
+      discardTake();
+    });
+
+    /* ── Guardar ─────────────────────────────────────────── */
+
+    async function save(): Promise<void> {
+      const blob = lastBlob;
+      if (!blob || saving) return;
+      saving = true;
+
+      const recordingId = newId();
+      const blobKey = `rec-${recordingId}`;
+
+      try {
+        await putBlob(blobKey, blob);
+      } catch {
+        // IndexedDB llena o bloqueada. La toma sigue en memoria, así que
+        // ofrecemos descargarla antes de perderla.
+        saving = false;
+        toast('Sin espacio para guardarla. Descargando el archivo…', { tone: 'error' });
+        const name = `${slugify(speech.title || 'speech')}-${new Date().toISOString().slice(0, 10)}.${extensionFor(blob.type)}`;
+        downloadBlob(blob, name);
+        return;
+      }
+
+      const ok = saveRecording({
+        id: recordingId,
+        speechId: speech.id,
+        title: speech.title || 'Speech sin título',
+        createdAt: Date.now(),
+        duration: lastDuration,
+        mimeType: blob.type,
+        size: blob.size,
+        blobKey,
+      });
+
+      if (!ok) {
+        await deleteBlob(blobKey).catch(() => undefined);
+        saving = false;
+        toast('No pudimos guardar la grabación.', { tone: 'error' });
+        return;
+      }
+
+      // El vuelo se reproduce en «Mis grabaciones», que es donde se puede medir
+      // la tarjeta de destino. Aquí solo dejamos el fotograma y el punto de
+      // partida; si algo falla, la navegación ocurre igual, sin animación.
+      const frame = captureFrame(reviewPlayer);
+      if (frame) {
+        stashFlight({ id: recordingId, image: frame, from: rectOf(reviewPlayer) });
+      }
+
+      lastBlob = null; // ya persistida: el aviso de salida deja de aplicar
+      window.location.href = '/grabaciones';
+    }
+
+    maybe('btn-save')?.addEventListener('click', (event) => {
+      tapFeedback(event.currentTarget as Element);
+      void save();
+    });
+
+    // Una toma sin guardar se pierde al cerrar la pestaña: hay que avisar.
+    window.addEventListener('beforeunload', (event) => {
+      if (!lastBlob) return;
+      event.preventDefault();
+      // `returnValue` está obsoleto pero sigue siendo lo que Chrome exige para
+      // mostrar el aviso; `preventDefault()` solo basta en Firefox y Safari.
+      event.returnValue = '';
     });
 
     /* ── Controles ───────────────────────────────────────── */

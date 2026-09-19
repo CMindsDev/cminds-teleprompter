@@ -58,7 +58,7 @@ const BODY_THEME = {
     <!-- Contenedor de avisos flotantes (lo usa `motion.ts › toast`). -->
     <div
       id="toast-host"
-      class="pointer-events-none fixed inset-x-0 bottom-24 z-50 flex flex-col items-center gap-2 px-4"
+      class="pointer-events-none fixed inset-x-0 bottom-32 z-50 flex flex-col items-center gap-2 px-4"
       aria-live="polite"
     >
     </div>
@@ -67,9 +67,17 @@ const BODY_THEME = {
       import { initLiquidGlass } from '../lib/liquid-glass/init';
       import { enterScreen, exitScreen } from '../lib/motion';
 
-      /** Alto real del viewport: en móvil `100vh` incluye la barra del navegador. */
+      /**
+       * Alto real del viewport.
+       *
+       * `100vh` en móvil incluye la barra del navegador, y `window.innerHeight`
+       * no encoge cuando se abre el teclado. `visualViewport` sí refleja el
+       * área realmente visible, que es lo que mantiene el botón del editor por
+       * encima del teclado en lugar de debajo.
+       */
       function syncViewportHeight(): void {
-        document.documentElement.style.setProperty('--app-vh', `${window.innerHeight}px`);
+        const height = window.visualViewport?.height ?? window.innerHeight;
+        document.documentElement.style.setProperty('--app-vh', `${height}px`);
       }
 
       function boot(): void {
@@ -79,6 +87,7 @@ const BODY_THEME = {
       }
 
       window.addEventListener('resize', syncViewportHeight);
+      window.visualViewport?.addEventListener('resize', syncViewportHeight);
       document.addEventListener('astro:page-load', boot);
 
       // Salida animada antes de que el ClientRouter cambie de página.

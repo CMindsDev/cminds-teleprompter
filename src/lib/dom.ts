@@ -50,9 +50,13 @@ export function onScreen(rootId: string, setup: () => void | (() => void)): void
   let teardown: (() => void) | void;
 
   document.addEventListener('astro:page-load', () => {
-    if (!document.getElementById(rootId)) return;
+    const root = document.getElementById(rootId);
+    if (!root) return;
     try {
       teardown = setup();
+      // Marca de «pantalla inicializada». La interfaz funciona sin ella; sirve
+      // para saber desde fuera (pruebas, CSS) que el script ya tomó el control.
+      root.dataset.ready = 'true';
     } catch (error) {
       if (error instanceof MissingElementError) {
         console.warn(error.message);

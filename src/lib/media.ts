@@ -60,26 +60,55 @@ export async function permissionState(name: 'camera' | 'microphone'): Promise<Pe
   }
 }
 
+/**
+ * Formatos de captura. Vertical es el único en uso; el resto queda listo para
+ * el selector de relación de aspecto.
+ *
+ * `ratio` se escribe igual que el valor CSS de `--capture-aspect` en
+ * `grabar.astro`, que es donde se decide el marco en pantalla.
+ */
+export const CAPTURE_FORMATS = {
+  vertical: { ratio: 9 / 16, css: '9 / 16', width: 1080, height: 1920, label: 'Vertical 9:16' },
+  cuadrado: { ratio: 1, css: '1 / 1', width: 1080, height: 1080, label: 'Cuadrado 1:1' },
+  horizontal: { ratio: 16 / 9, css: '16 / 9', width: 1920, height: 1080, label: 'Horizontal 16:9' },
+} as const;
+
+export type CaptureFormat = keyof typeof CAPTURE_FORMATS;
+
+export const DEFAULT_FORMAT: CaptureFormat = 'vertical';
+
 export interface CameraOptions {
   facingMode?: 'user' | 'environment';
   audio?: boolean;
+  format?: CaptureFormat;
 }
 
 /**
  * Pide cámara + micrófono. Lanza `MediaError` con un motivo legible.
  * La primera llamada dispara el diálogo de permisos del navegador.
  */
-export async function requestCamera({ facingMode = 'user', audio = true }: CameraOptions = {}): Promise<MediaStream> {
+export async function requestCamera({
+  facingMode = 'user',
+  audio = true,
+  format = DEFAULT_FORMAT,
+}: CameraOptions = {}): Promise<MediaStream> {
   if (typeof window === 'undefined') throw new MediaError('no-soportado', MESSAGES['no-soportado']);
   if (!window.isSecureContext) throw new MediaError('inseguro', MESSAGES.inseguro);
   if (!navigator.mediaDevices?.getUserMedia) throw new MediaError('no-soportado', MESSAGES['no-soportado']);
+
+  const { width, height, ratio } = CAPTURE_FORMATS[format];
 
   try {
     return await navigator.mediaDevices.getUserMedia({
       video: {
         facingMode,
-        width: { ideal: 1080 },
-        height: { ideal: 1920 },
+        width: { ideal: width },
+        height: { ideal: height },
+        // Pedir la relación explícitamente, y no solo la resolución, es lo que
+        // hace que los móviles entreguen el sensor en vertical. Es `ideal`, no
+        // `exact`: una webcam de escritorio solo da apaisado, y preferimos una
+        // cámara apaisada a un error de restricción imposible.
+        aspectRatio: { ideal: ratio },
         frameRate: { ideal: 30 },
       },
       audio: audio ? { echoCancellation: true, noiseSuppression: true } : false,
@@ -87,6 +116,13 @@ export async function requestCamera({ facingMode = 'user', audio = true }: Camer
   } catch (error) {
     throw classify(error);
   }
+}
+
+/** Relación real que entrega la cámara, para avisar si no es la pedida. */
+export function trackAspectRatio(stream: MediaStream): number | null {
+  const settings = stream.getVideoTracks()[0]?.getSettings();
+  if (!settings?.width || !settings.height) return null;
+  return settings.width / settings.height;
 }
 
 /** Apaga todas las pistas: sin esto el indicador de cámara sigue encendido. */

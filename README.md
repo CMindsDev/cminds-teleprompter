@@ -58,9 +58,84 @@ Atajos de teclado: `↑`/`↓` velocidad y `+`/`-` tamaño funcionan en encuadre
 en grabación; `espacio` (reproducir/pausar) y `←`/`→` (saltar líneas) solo
 mientras se graba.
 
-Al detener: vista previa de la toma, **descarga** del archivo y guardado
-automático en la lista. El formato es MP4 o WebM según lo que soporte el
-navegador ([media.ts](src/lib/media.ts) prueba los códecs en orden).
+## Revisar y guardar
+
+Al detener, el clip se abre **a pantalla completa**: se reproduce solo, se toca
+para pausar y «Repetir» lo reinicia desde el principio.
+
+La toma **no se guarda sola**. Vive en memoria hasta que se pulsa «Guardar
+video»; salir descarta (con confirmación) y cerrar la pestaña avisa antes. Es lo
+que hace que el botón signifique algo.
+
+Al guardar, el clip **vuela encogiéndose hasta su tarjeta** en «Mis
+grabaciones» ([flight.ts](src/lib/flight.ts)). La animación se ejecuta en la
+página de destino, no en la de grabación: es la única forma de medir dónde cae
+la tarjeta de verdad en lugar de recalcular a mano la rejilla. Lo que cruza
+entre páginas es un fotograma congelado en `sessionStorage`, no el vídeo.
+
+La **descarga** está en el detalle de cada tarjeta. El formato es MP4 o WebM
+según lo que soporte el navegador ([media.ts](src/lib/media.ts) prueba los
+códecs en orden).
+
+## Sin scroll para llegar al botón
+
+Ni el editor ni la biblioteca obligan a desplazarse para alcanzar la acción
+principal, por largo que sea el speech o la lista:
+
+- **Editor** — la pantalla no se desplaza; lo hace el textarea por dentro. El
+  botón y la barra de deshacer quedan fuera del flujo del texto, así que no hay
+  nada que los empuje. Se evita `position: fixed` a propósito: el teclado del
+  móvil lo desplaza o lo tapa.
+- **Biblioteca** — barra fija con degradado, y `pb-32` en el contenido para que
+  la última fila pueda subir por encima sin quedar oculta.
+
+El alto de la app sale de `--app-vh`, que sigue a `visualViewport` en vez de a
+`100vh`: al abrir el teclado la interfaz encoge y el botón se queda encima, no
+debajo.
+
+## Formato de captura
+
+La cámara se encuadra en **vertical 9:16**, centrada y con bandas negras si la
+pantalla es más alargada. Antes el vídeo llenaba la pantalla con `object-cover`,
+así que en móviles altos se veía un recorte de lo que realmente se grababa.
+
+La relación vive en un solo sitio, `--capture-aspect` sobre `#stage`, y de ahí
+la toman el encuadre y la revisión. Las resoluciones y proporciones están en
+`CAPTURE_FORMATS` ([media.ts](src/lib/media.ts)), ya con `cuadrado` y
+`horizontal` definidos para el selector de formato que viene después.
+
+A `getUserMedia` se le pide `aspectRatio` además de la resolución: es lo que
+hace que los móviles entreguen el sensor en vertical. Va como `ideal`, no
+`exact`, porque una webcam de escritorio solo sabe hacer apaisado y es mejor una
+cámara apaisada que un error de restricción imposible. Si el sensor no da lo
+pedido, el marco se ajusta a lo que entrega: enseñar un recorte vertical de una
+cámara apaisada sería repetir el mismo desajuste en escritorio.
+
+## Eliminar con gesto
+
+Arrastrar una tarjeta **hacia arriba** la borra: el relleno rojo crece desde
+abajo y, al llenarse, soltar elimina ([swipe-delete.ts](src/lib/swipe-delete.ts)).
+Bajar el dedo antes de soltar cancela.
+
+Un gesto vertical dentro de una lista que también se desplaza en vertical
+compite consigo mismo — por eso iOS usa gestos horizontales. Aquí el gesto solo
+se reclama cuando es **claramente** un arrastre hacia arriba (supera una holgura
+de 14 px y el eje vertical domina al horizontal): un deslizamiento rápido para
+recorrer la lista sigue haciendo scroll. Con ratón no hay conflicto, así que en
+escritorio el arrastre se reclama desde el primer píxel.
+
+Al eliminar aparece un **snackbar con «Deshacer» durante 5 s**. El borrado es
+reversible por construcción: la ficha se quita al momento (la tarjeta
+desaparece), pero el vídeo **no se toca** hasta que vence el aviso. Deshacer es
+entonces devolver la ficha a su sitio, sin haber perdido nada — un gesto de
+deslizar se dispara demasiado fácil como para que sea irreversible.
+
+Si alguien sale de la pantalla durante esos 5 s, el borrado aplazado nunca
+llega a ejecutarse. Al volver a la lista se barren los vídeos que ya no tiene
+ninguna ficha, lo que cubre también los cierres bruscos de pestaña.
+
+El gesto es un atajo, no la única vía: el botón «Eliminar» del detalle hace
+exactamente lo mismo y es la ruta accesible por teclado y lector de pantalla.
 
 ## Cámara y micrófono
 

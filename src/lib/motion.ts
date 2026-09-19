@@ -128,26 +128,91 @@ export function tapFeedback(target: Element): void {
 }
 
 /** Aparición de un toast / aviso flotante, con auto-cierre. */
-export function toast(message: string, tone: 'info' | 'error' = 'info', ms = 2600): void {
+export interface ToastAction {
+  label: string;
+  /** Se ejecuta al pulsar; el aviso se cierra solo. */
+  onAction: () => void;
+}
+
+export interface ToastOptions {
+  tone?: 'info' | 'error';
+  /** Milisegundos en pantalla. Con acción conviene dar margen para reaccionar. */
+  ms?: number;
+  action?: ToastAction;
+  /**
+   * Se llama al cerrarse **sin** que se pulsara la acción. Es el momento de
+   * consolidar lo que la acción habría revertido.
+   */
+  onExpire?: () => void;
+}
+
+/**
+ * Aviso flotante. Con `action` se comporta como un snackbar: ofrece deshacer
+ * durante un rato y, si nadie lo pulsa, confirma con `onExpire`.
+ */
+export function toast(message: string, options: ToastOptions = {}): void {
+  const { tone = 'info', action, onExpire } = options;
+  const ms = options.ms ?? (action ? 5000 : 2600);
+
   const host = document.getElementById('toast-host');
-  if (!host) return;
+  if (!host) {
+    // Sin sitio donde pintarlo, no dejamos el trabajo a medias.
+    onExpire?.();
+    return;
+  }
 
   const el = document.createElement('div');
   el.role = 'status';
   el.className = [
-    'pointer-events-auto rounded-2xl px-4 py-3 text-sm font-medium shadow-lg',
+    'pointer-events-auto flex items-center gap-4 rounded-2xl py-3 pl-4 text-sm font-medium shadow-lg',
+    action ? 'pr-2' : 'pr-4',
     tone === 'error' ? 'bg-record text-white' : 'bg-ink text-paper',
   ].join(' ');
-  el.textContent = message;
+
+  const text = document.createElement('span');
+  text.textContent = message;
+  el.appendChild(text);
+
+  /** Solo puede resolverse una vez: o se deshace, o se consolida. */
+  let settled = false;
+  let timeline: gsap.core.Timeline | null = null;
+  let timer = 0;
+
+  const close = (undone: boolean): void => {
+    if (settled) return;
+    settled = true;
+    window.clearTimeout(timer);
+    timeline?.kill();
+
+    if (undone) action?.onAction();
+    else onExpire?.();
+
+    if (REDUCED_MOTION()) {
+      el.remove();
+      return;
+    }
+    gsap.to(el, { y: -10, autoAlpha: 0, duration: 0.25, ease: 'power2.in', onComplete: () => el.remove() });
+  };
+
+  if (action) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.textContent = action.label;
+    button.className =
+      'shrink-0 rounded-xl px-3 py-1.5 text-sm font-semibold text-brand-300 transition-colors hover:bg-white/10 focus-visible:bg-white/10';
+    button.addEventListener('click', () => close(true));
+    el.appendChild(button);
+  }
+
   host.appendChild(el);
 
   if (REDUCED_MOTION()) {
-    window.setTimeout(() => el.remove(), ms);
+    timer = window.setTimeout(() => close(false), ms);
     return;
   }
 
-  gsap
-    .timeline({ onComplete: () => el.remove() })
+  timeline = gsap
+    .timeline()
     .from(el, { y: 20, autoAlpha: 0, duration: 0.4, ease: EASE.out })
-    .to(el, { y: -10, autoAlpha: 0, duration: 0.3, ease: 'power2.in' }, `+=${ms / 1000}`);
+    .call(() => close(false), undefined, `+=${ms / 1000}`);
 }
