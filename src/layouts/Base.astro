@@ -70,9 +70,27 @@ const BODY_THEME = {
       // El build guarda la interfaz para próximas visitas sin conexión.
       // Los speeches y videos se guardan aparte, en localStorage e IndexedDB.
       if (import.meta.env.PROD && 'serviceWorker' in navigator) {
-        void navigator.serviceWorker.register('/sw.js').catch((error) => {
-          console.warn('No se pudo preparar la aplicación sin conexión.', error);
+        // Si ya había un controlador, esta pestaña está sirviéndose de una
+        // versión cacheada. Cuando el worker nuevo tome el relevo hay que
+        // recargar: el HTML y los módulos en pantalla son los antiguos y no
+        // cambian solos. Sin esto, un despliegue no llega nunca al móvil.
+        const teniaControlador = Boolean(navigator.serviceWorker.controller);
+        let recargando = false;
+
+        navigator.serviceWorker.addEventListener('controllerchange', () => {
+          if (!teniaControlador || recargando) return;
+          recargando = true;
+          window.location.reload();
         });
+
+        navigator.serviceWorker
+          .register('/sw.js')
+          // Fuerza la comprobación de versión al entrar, en vez de esperar a
+          // que el navegador decida revisarla por su cuenta.
+          .then((registration) => registration.update())
+          .catch((error) => {
+            console.warn('No se pudo preparar la aplicación sin conexión.', error);
+          });
       }
 
       /**

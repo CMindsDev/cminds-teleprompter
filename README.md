@@ -174,6 +174,23 @@ ninguna ficha, lo que cubre también los cierres bruscos de pestaña.
 El gesto es un atajo, no la única vía: el botón «Eliminar» del detalle hace
 exactamente lo mismo y es la ruta accesible por teclado y lector de pantalla.
 
+## Funcionamiento sin conexión
+
+Un service worker precarga el build para que la app abra sin red
+([offline.mjs](scripts/offline.mjs)). El nombre de la caché es el hash del
+contenido, así que cada build crea una caché nueva y borra las anteriores.
+
+**El worker llama a `skipWaiting()` y el cliente recarga al cambiar de
+controlador.** Sin esas dos piezas, una versión nueva se queda en estado
+«esperando» hasta que se cierren todas las pestañas controladas por la
+anterior — en un móvil eso no ocurre nunca, y el usuario sigue viendo la
+interfaz vieja por mucho que se despliegue. Es un fallo silencioso: el
+despliegue parece correcto y el dispositivo no cambia.
+
+Si hace falta forzar la limpieza en un dispositivo concreto: borrar los datos
+del sitio en el navegador, o anular el registro del worker desde las
+herramientas de desarrollo.
+
 ## Cámara y micrófono
 
 `getUserMedia` solo funciona en **contexto seguro**: `https://` o `localhost`.

@@ -32,6 +32,11 @@ export function offlineApp() {
 const CACHE = ${JSON.stringify(cacheName)};
 const ASSETS = ${JSON.stringify(urls)};
 self.addEventListener('install', event => {
+  // Sin \`skipWaiting\` la versión nueva se queda en espera hasta que se cierren
+  // TODAS las pestañas controladas por la anterior. En un móvil eso no pasa
+  // nunca, así que el usuario seguiría viendo la interfaz vieja indefinidamente
+  // por mucho que se despliegue. El cliente recarga al cambiar de controlador.
+  self.skipWaiting();
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(ASSETS)));
 });
 self.addEventListener('activate', event => {
