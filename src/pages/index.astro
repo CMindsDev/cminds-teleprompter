@@ -5,7 +5,7 @@ import LiquidButton from '../components/LiquidButton.astro';
 ---
 
 <Base title="Teleprompter · C MINDS" theme="dark" lockScroll>
-  <main class="app-shell relative overflow-hidden safe-top safe-bottom">
+  <main id="welcome-screen" class="app-shell relative overflow-hidden safe-top safe-bottom" style="visibility: hidden">
     <!--
       Degradado de la portada: un halo azul arriba que se apaga hacia el negro
       corporativo. Dos capas en vez de un solo `radial-gradient` para que el
@@ -74,8 +74,21 @@ import LiquidButton from '../components/LiquidButton.astro';
 
 <script>
   import { animateLogo } from '../lib/motion';
+  import { onScreen } from '../lib/dom';
+  import { hasAppStarted } from '../lib/store';
 
-  document.addEventListener('astro:page-load', () => {
+  const redirectReturningUser = (): boolean => {
+    if (!document.getElementById('welcome-screen') || !hasAppStarted()) return false;
+    window.location.replace('/grabaciones');
+    return true;
+  };
+
+  // Safari puede restaurar la portada desde la caché al pulsar Atrás.
+  window.addEventListener('pageshow', () => { redirectReturningUser(); });
+
+  onScreen('welcome-screen', () => {
+    if (redirectReturningUser()) return;
+    document.getElementById('welcome-screen')!.style.visibility = '';
     const logo = document.getElementById('brand-logo');
     if (!(logo instanceof HTMLImageElement)) return;
 

@@ -10,6 +10,7 @@ import { DEFAULT_SETTINGS, type Recording, type Speech, type TeleprompterSetting
 const SPEECH_KEY = 'cminds.teleprompter.speeches.v1';
 const RECORDING_KEY = 'cminds.teleprompter.recordings.v1';
 const DRAFT_KEY = 'cminds.teleprompter.activeSpeech';
+const STARTED_KEY = 'cminds.teleprompter.started.v1';
 
 const canStore = (): boolean => typeof window !== 'undefined' && 'localStorage' in window;
 
@@ -39,6 +40,21 @@ export function newId(): string {
   return `id-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
+/** La bienvenida deja de ser el inicio después de comenzar a usar la app. */
+export function markAppStarted(): void {
+  write(STARTED_KEY, true);
+}
+
+export function hasAppStarted(): boolean {
+  if (read(STARTED_KEY, false)) return true;
+  // Reconoce también los datos creados antes de incorporar esta preferencia.
+  if (listSpeeches().length || listRecordings().length) {
+    markAppStarted();
+    return true;
+  }
+  return false;
+}
+
 /* ── Guiones ──────────────────────────────────────────────── */
 
 export function listSpeeches(): Speech[] {
@@ -62,6 +78,7 @@ export function createSpeech(partial: Partial<Speech> = {}): Speech {
   const all = read<Speech[]>(SPEECH_KEY, []);
   all.push(speech);
   write(SPEECH_KEY, all);
+  markAppStarted();
   return speech;
 }
 
@@ -120,7 +137,9 @@ export function saveRecording(recording: Recording): boolean {
   const index = all.findIndex((r) => r.id === recording.id);
   if (index >= 0) all[index] = recording;
   else all.push(recording);
-  return write(RECORDING_KEY, all);
+  const saved = write(RECORDING_KEY, all);
+  if (saved) markAppStarted();
+  return saved;
 }
 
 export function deleteRecordingMeta(id: string): void {
