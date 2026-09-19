@@ -102,24 +102,13 @@ export async function requestCamera({
     return await navigator.mediaDevices.getUserMedia({
       video: {
         facingMode,
-        // Se piden las dimensiones en vertical y **no** se pasa `aspectRatio`.
-        //
-        // Parece lo contrario de lo razonable, pero pedirlo rompe el móvil: el
-        // navegador publica las capacidades de la cámara en el espacio del
-        // sensor, que está montado en horizontal, así que el rango disponible
-        // va de 1.33 a 1.78. Un `aspectRatio: { ideal: 0.5625 }` no es
-        // alcanzable y se recorta al extremo más cercano del rango: 1.33, o
-        // sea 4:3 apaisado, que es el peor resultado posible.
-        //
-        // Sin esa restricción, los móviles que saben abrir el sensor en
-        // vertical lo hacen a partir de width/height, y los que no, entregan
-        // apaisado a buena resolución, que es justo lo que necesita el recorte
-        // posterior. La salida 1080×1920 la garantiza `composeVertical`, no la
-        // cámara.
+        // Preferir la imagen nativa para evitar recortes del navegador.
+        // Es opcional para conservar compatibilidad con otras cámaras.
+        resizeMode: { ideal: 'none' },
         width: { ideal: width },
         height: { ideal: height },
         frameRate: { ideal: 30 },
-      },
+      } as MediaTrackConstraints & { resizeMode: ConstrainDOMString },
       audio: audio ? { echoCancellation: true, noiseSuppression: true } : false,
     });
   } catch (error) {
@@ -182,16 +171,10 @@ export interface Composer {
 /**
  * Recompone la cámara en un lienzo del tamaño exacto del formato (1080×1920).
  *
- * Por qué hace falta: ninguna restricción de `getUserMedia` obliga a una cámara
- * a entregar vertical. Muchos móviles Android y iOS abren el sensor en
- * horizontal (4:3 o 16:9) y no hay forma de impedirlo desde la web. Grabar esa
- * pista tal cual produce un archivo apaisado por mucho que la interfaz enseñe
- * un marco vertical.
- *
- * Dibujando cada fotograma recortado al centro sobre un lienzo de 1080×1920 y
- * grabando `canvas.captureStream()`, la salida es la pedida **siempre**, dé lo
- * que dé la cámara. El recorte es el mismo que aplica `object-cover` en la
- * vista previa, así que lo que se ve es lo que se graba.
+ * La cámara puede entregar una proporción distinta a la solicitada. Se ajusta
+ * la imagen completa, centrada y sin deformar, igual que object-contain en
+ * la vista previa. El espacio sobrante se rellena de negro: nunca se recorta
+ * el campo de visión para llenar el formato de salida.
  *
  * Devuelve `null` si el navegador no sabe capturar un lienzo; quien llama debe
  * seguir con la pista original.
@@ -218,7 +201,6 @@ export function composeVertical(
   canvas.style.cssText = 'position:fixed;left:-1px;top:-1px;width:1px;height:1px;opacity:0;pointer-events:none';
   document.body.appendChild(canvas);
 
-  const targetRatio = width / height;
   let running = true;
   let rafId = 0;
   let frameId = 0;
@@ -227,11 +209,14 @@ export function composeVertical(
     const sw = video.videoWidth;
     const sh = video.videoHeight;
     if (sw && sh) {
-      // Recorte centrado, idéntico a `object-cover`.
-      const sourceRatio = sw / sh;
-      const cropW = sourceRatio > targetRatio ? sh * targetRatio : sw;
-      const cropH = sourceRatio > targetRatio ? sh : sw / targetRatio;
-      context.drawImage(video, (sw - cropW) / 2, (sh - cropH) / 2, cropW, cropH, 0, 0, width, height);
+      // Ajuste completo, idéntico a object-contain, incluso al girar el móvil.
+      const scale = Math.min(width / sw, height / sh);
+      const drawWidth = sw * scale;
+      const drawHeight = sh * scale;
+      context.fillStyle = '#000';
+      context.fillRect(0, 0, width, height);
+      context.drawImage(video, 0, 0, sw, sh,
+        (width - drawWidth) / 2, (height - drawHeight) / 2, drawWidth, drawHeight);
     }
   };
 

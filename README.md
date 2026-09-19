@@ -95,33 +95,38 @@ debajo.
 
 ## Formato de captura
 
-La cámara se encuadra en **vertical 9:16**, centrada y con bandas negras si la
-pantalla es más alargada. Antes el vídeo llenaba la pantalla con `object-cover`,
-así que en móviles altos se veía un recorte de lo que realmente se grababa.
+La salida es **1080×1920 siempre**, dé lo que dé la cámara.
 
-La relación vive en un solo sitio, `--capture-aspect` sobre `#stage`, y de ahí
-la toman el encuadre y la revisión. Las resoluciones y proporciones están en
-`CAPTURE_FORMATS` ([media.ts](src/lib/media.ts)), ya con `cuadrado` y
-`horizontal` definidos para el selector de formato que viene después.
+Esto no se puede conseguir con restricciones. Ninguna opción de
+`getUserMedia` obliga a una cámara a entregar vertical: muchos móviles Android
+e iOS abren el sensor en horizontal (4:3 o 16:9) y no hay forma de impedirlo
+desde la web. Grabar esa pista tal cual produce un archivo apaisado por mucho
+que la interfaz enseñe un marco vertical.
 
-A `getUserMedia` se le pide `aspectRatio` además de la resolución: es lo que
-hace que los móviles entreguen el sensor en vertical. Va como `ideal`, no
-`exact`, porque una webcam de escritorio solo sabe hacer apaisado y es mejor una
-cámara apaisada que un error de restricción imposible. Si el sensor no da lo
-pedido, el marco se ajusta a lo que entrega: enseñar un recorte vertical de una
-cámara apaisada sería repetir el mismo desajuste en escritorio.
+Por eso `composeVertical` ([media.ts](src/lib/media.ts)) redibuja cada
+fotograma, recortado al centro, sobre un lienzo de 1080×1920 y graba
+`canvas.captureStream()` con el audio original. El recorte es exactamente el
+que aplica `object-cover` en la vista previa, así que lo que se ve es lo que se
+graba. Si el navegador no sabe capturar un lienzo, se graba la pista original y
+se avisa.
 
-**La relación se mide en el `<video>`, no en `track.getSettings()`.** En el
-móvil la pista suele describir el sensor, montado en horizontal: informa de
-1280×720 aunque el navegador ya haya rotado la imagen y la pinte en 720×1280.
-Fiarse de la pista dejaba un marco apaisado sobre un vídeo vertical y, con
-`object-cover`, un recorte severo por los lados. Se consulta en
-`loadedmetadata` y en `resize` (giros de pantalla), porque `videoWidth` vale 0
-hasta que llegan los metadatos.
+**Cuidado con `aspectRatio`.** Pedir `aspectRatio: { ideal: 9/16 }` parece lo
+razonable y rompe el móvil: el navegador publica las capacidades de la cámara
+en el espacio del sensor, montado en horizontal, así que el rango disponible va
+de 1.33 a 1.78. Un valor de 0.5625 no es alcanzable y se recorta al extremo más
+cercano — 1.33, o sea **4:3 apaisado**, el peor resultado posible. Se piden solo
+`width`/`height` en vertical: los móviles que saben abrir el sensor en vertical
+lo hacen, y los que no, entregan apaisado a buena resolución, que es justo lo
+que necesita el recorte posterior.
 
-El vídeo usa `object-contain`: con el marco bien medido se ve idéntico a
-`object-cover`, pero garantiza que nada se recorta nunca, ni siquiera en el
-instante previo a tener los metadatos.
+Las resoluciones están en `CAPTURE_FORMATS`, ya con `cuadrado` y `horizontal`
+definidos para el selector de formato que viene después; el marco en pantalla
+sale de `--capture-aspect` sobre `#stage`.
+
+Para saber qué hace un dispositivo concreto, `/grabar?debug=1` muestra en
+pantalla lo que informa la pista, lo que pinta el `<video>` y la resolución de
+salida. En un móvil no hay consola, y esa diferencia es justo la que explica
+los problemas de encuadre.
 
 ## Escritorio
 
