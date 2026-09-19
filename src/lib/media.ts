@@ -96,7 +96,7 @@ export async function requestCamera({
   if (!window.isSecureContext) throw new MediaError('inseguro', MESSAGES.inseguro);
   if (!navigator.mediaDevices?.getUserMedia) throw new MediaError('no-soportado', MESSAGES['no-soportado']);
 
-  const { width, height } = CAPTURE_FORMATS[format];
+  const { width, height, ratio } = CAPTURE_FORMATS[format];
 
   try {
     return await navigator.mediaDevices.getUserMedia({
@@ -105,6 +105,7 @@ export async function requestCamera({
         // Preferir la imagen nativa para evitar recortes del navegador.
         // Es opcional para conservar compatibilidad con otras cámaras.
         resizeMode: { ideal: 'none' },
+        aspectRatio: { ideal: ratio },
         width: { ideal: width },
         height: { ideal: height },
         frameRate: { ideal: 30 },
@@ -171,10 +172,9 @@ export interface Composer {
 /**
  * Recompone la cámara en un lienzo del tamaño exacto del formato (1080×1920).
  *
- * La cámara puede entregar una proporción distinta a la solicitada. Se ajusta
- * la imagen completa, centrada y sin deformar, igual que object-contain en
- * la vista previa. El espacio sobrante se rellena de negro: nunca se recorta
- * el campo de visión para llenar el formato de salida.
+ * Llena el formato vertical sin deformar la imagen, igual que object-cover
+ * en la vista previa. Si la cámara entrega otra proporción, solo se recorta
+ * el excedente centrado necesario para cubrir el lienzo sin bandas.
  *
  * Devuelve `null` si el navegador no sabe capturar un lienzo; quien llama debe
  * seguir con la pista original.
@@ -209,8 +209,8 @@ export function composeVertical(
     const sw = video.videoWidth;
     const sh = video.videoHeight;
     if (sw && sh) {
-      // Ajuste completo, idéntico a object-contain, incluso al girar el móvil.
-      const scale = Math.min(width / sw, height / sh);
+      // Mismo encuadre 9:16 que object-cover, incluso al girar el móvil.
+      const scale = Math.max(width / sw, height / sh);
       const drawWidth = sw * scale;
       const drawHeight = sh * scale;
       context.fillStyle = '#000';
