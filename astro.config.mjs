@@ -1,6 +1,7 @@
 // @ts-check
 import { defineConfig } from 'astro/config';
 import tailwindcss from '@tailwindcss/vite';
+import { offlineApp } from './scripts/offline.mjs';
 
 /**
  * Autoriza cámara y micrófono en el propio origen durante el desarrollo.
@@ -31,8 +32,9 @@ export default defineConfig({
   // `static` basta. Si más adelante se firma la subida al bucket desde el
   // servidor, cambiar a `output: 'server'` y añadir el adaptador de la plataforma.
   output: 'static',
+  devToolbar: { enabled: false },
   prefetch: { prefetchAll: true, defaultStrategy: 'viewport' },
-  integrations: [devPermissionsPolicy],
+  integrations: [devPermissionsPolicy, offlineApp()],
   vite: {
     plugins: [tailwindcss()],
   },

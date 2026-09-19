@@ -32,7 +32,9 @@ function tx<T>(mode: IDBTransactionMode, run: (store: IDBObjectStore) => IDBRequ
       new Promise<T>((resolve, reject) => {
         const transaction = db.transaction(STORE, mode);
         const request = run(transaction.objectStore(STORE));
-        request.onsuccess = () => resolve(request.result);
+        // El éxito de la petición no implica que la transacción ya se guardó.
+        transaction.oncomplete = () => resolve(request.result);
+        transaction.onabort = () => reject(transaction.error ?? new Error('No se pudo guardar en IndexedDB'));
         request.onerror = () => reject(request.error ?? new Error('Error de IndexedDB'));
       }),
   );

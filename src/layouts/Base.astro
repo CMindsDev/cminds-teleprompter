@@ -67,6 +67,14 @@ const BODY_THEME = {
       import { initLiquidGlass } from '../lib/liquid-glass/init';
       import { enterScreen, exitScreen } from '../lib/motion';
 
+      // El build guarda la interfaz para próximas visitas sin conexión.
+      // Los speeches y videos se guardan aparte, en localStorage e IndexedDB.
+      if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+        void navigator.serviceWorker.register('/sw.js').catch((error) => {
+          console.warn('No se pudo preparar la aplicación sin conexión.', error);
+        });
+      }
+
       /**
        * Alto real del viewport.
        *

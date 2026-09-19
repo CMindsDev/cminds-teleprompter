@@ -90,11 +90,19 @@ export function deleteSpeech(id: string): void {
 
 /** Id del guion que se está editando o grabando ahora mismo. */
 export function setActiveSpeechId(id: string): void {
-  if (canStore()) window.localStorage.setItem(DRAFT_KEY, id);
+  try {
+    if (canStore()) window.localStorage.setItem(DRAFT_KEY, id);
+  } catch {
+    // Un marcador opcional no debe interrumpir la inicialización del editor.
+  }
 }
 
 export function getActiveSpeechId(): string | null {
-  return canStore() ? window.localStorage.getItem(DRAFT_KEY) : null;
+  try {
+    return canStore() ? window.localStorage.getItem(DRAFT_KEY) : null;
+  } catch {
+    return null;
+  }
 }
 
 /* ── Grabaciones (metadatos) ──────────────────────────────── */

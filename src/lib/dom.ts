@@ -48,12 +48,14 @@ export function maybe<T extends Element = HTMLElement>(
  */
 export function onScreen(rootId: string, setup: () => void | (() => void)): void {
   let teardown: (() => void) | void;
+  let activeRoot: HTMLElement | null = null;
 
-  document.addEventListener('astro:page-load', () => {
+  const initialize = (): void => {
     const root = document.getElementById(rootId);
-    if (!root) return;
+    if (!root || root === activeRoot) return;
     try {
       teardown = setup();
+      activeRoot = root;
       // Marca de «pantalla inicializada». La interfaz funciona sin ella; sirve
       // para saber desde fuera (pruebas, CSS) que el script ya tomó el control.
       root.dataset.ready = 'true';
@@ -64,10 +66,20 @@ export function onScreen(rootId: string, setup: () => void | (() => void)): void
       }
       throw error;
     }
-  });
+  };
+
+  // También arranca si el módulo llega después de astro:page-load.
+  // La identidad del nodo evita inicializar dos veces la misma pantalla.
+  document.addEventListener('astro:page-load', initialize);
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initialize, { once: true });
+  } else {
+    initialize();
+  }
 
   document.addEventListener('astro:before-swap', () => {
     teardown?.();
     teardown = undefined;
+    activeRoot = null;
   });
 }

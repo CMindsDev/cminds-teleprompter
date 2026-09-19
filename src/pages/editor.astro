@@ -109,7 +109,11 @@ import Icon from '../components/Icon.astro';
     setActiveSpeechId(speech.id);
     // Recargar o volver a esta entrada del historial conserva este borrador.
     editorUrl.searchParams.set('id', speech.id);
-    window.history.replaceState(window.history.state, '', editorUrl);
+    try {
+      window.history.replaceState(window.history.state, '', editorUrl);
+    } catch {
+      // La URL es una comodidad; el editor debe funcionar aunque no se cambie.
+    }
 
     // Sobrescribir también los valores que el navegador pudiera restaurar.
     titleEl.value = speech.title;
@@ -233,18 +237,21 @@ import Icon from '../components/Icon.astro';
 
     /* ── Eventos ─────────────────────────────────────────── */
 
+    const onEdit = (): void => {
+      syncUi();
+      pushHistory();
+      queueSave();
+    };
     for (const field of [titleEl, bodyEl]) {
-      field.addEventListener('input', () => {
-        syncUi();
-        pushHistory();
-        queueSave();
-      });
+      field.addEventListener('input', onEdit);
+      field.addEventListener('change', onEdit);
+      field.addEventListener('compositionend', onEdit);
     }
 
     undoBtn.addEventListener('click', undo);
     redoBtn.addEventListener('click', redo);
 
-    document.addEventListener('keydown', (event) => {
+    const onKeydown = (event: KeyboardEvent): void => {
       if (!(event.metaKey || event.ctrlKey)) return;
       const key = event.key.toLowerCase();
       if (key === 'z' && !event.shiftKey) {
@@ -254,7 +261,8 @@ import Icon from '../components/Icon.astro';
         event.preventDefault();
         redo();
       }
-    });
+    };
+    document.addEventListener('keydown', onKeydown);
 
     recordBtn.addEventListener('click', (event) => {
       if (!bodyEl.value.trim()) {
@@ -263,22 +271,33 @@ import Icon from '../components/Icon.astro';
       }
       // Guardamos de inmediato: la pantalla de grabación lee de localStorage.
       window.clearTimeout(saveTimer);
-      saveSpeech({ ...speech, title: titleEl.value, body: bodyEl.value });
+      if (!saveSpeech({ ...speech, title: titleEl.value, body: bodyEl.value })) {
+        toast('No se pudo guardar en este navegador. Tu texto sigue aquí; libera espacio o habilita el almacenamiento para continuar.', { tone: 'error' });
+        return;
+      }
       tapFeedback(recordBtn);
       window.location.href = `/grabar?id=${speech.id}`;
     });
 
     // Cerrar la pestaña a mitad de una frase no debería perder el texto.
-    window.addEventListener('pagehide', () => {
+    const flushSave = (): void => {
       window.clearTimeout(saveTimer);
-      if (titleEl.value.trim() || bodyEl.value.trim()) {
-        saveSpeech({ ...speech, title: titleEl.value, body: bodyEl.value });
-      }
-    });
+      window.clearTimeout(savedTimer);
+      saveSpeech({ ...speech, title: titleEl.value, body: bodyEl.value });
+    };
+    window.addEventListener('pagehide', flushSave);
+    window.addEventListener('pageshow', syncUi);
 
     syncUi();
     syncHistoryButtons();
 
     if (!bodyEl.value) bodyEl.focus();
+
+    return () => {
+      flushSave();
+      document.removeEventListener('keydown', onKeydown);
+      window.removeEventListener('pagehide', flushSave);
+      window.removeEventListener('pageshow', syncUi);
+    };
   });
 </script>
