@@ -96,7 +96,7 @@ export async function requestCamera({
   if (!window.isSecureContext) throw new MediaError('inseguro', MESSAGES.inseguro);
   if (!navigator.mediaDevices?.getUserMedia) throw new MediaError('no-soportado', MESSAGES['no-soportado']);
 
-  const { width, height, ratio } = CAPTURE_FORMATS[format];
+  const { width, height } = CAPTURE_FORMATS[format];
 
   try {
     return await navigator.mediaDevices.getUserMedia({
@@ -105,9 +105,11 @@ export async function requestCamera({
         // Preferir la imagen nativa para evitar recortes del navegador.
         // Es opcional para conservar compatibilidad con otras cámaras.
         resizeMode: { ideal: 'none' },
-        aspectRatio: { ideal: ratio },
-        width: { ideal: width },
-        height: { ideal: height },
+        // Las restricciones se expresan en la orientación primaria del sensor.
+        // Safari/Chrome rotan los fotogramas al sostener el móvil en vertical.
+        // No imponer aquí el 9:16 de salida: puede recortar la propia captura.
+        width: { ideal: Math.max(width, height) },
+        height: { ideal: Math.min(width, height) },
         frameRate: { ideal: 30 },
       } as MediaTrackConstraints & { resizeMode: ConstrainDOMString },
       audio: audio ? { echoCancellation: true, noiseSuppression: true } : false,
@@ -143,6 +145,16 @@ export function displayedAspectRatio(video: HTMLVideoElement): number | null {
   return video.videoWidth / video.videoHeight;
 }
 
+/** Evita convertir una webcam horizontal o cuadrada en un primer plano. */
+export function cameraFit(
+  width: number,
+  height: number,
+  format: CaptureFormat = DEFAULT_FORMAT,
+): 'contain' | 'cover' {
+  if (!width || !height) return 'contain';
+  return CAPTURE_FORMATS[format].ratio < 1 && width >= height ? 'contain' : 'cover';
+}
+
 /** Apaga todas las pistas: sin esto el indicador de cámara sigue encendido. */
 export function stopStream(stream: MediaStream | null): void {
   stream?.getTracks().forEach((track) => track.stop());
@@ -172,9 +184,9 @@ export interface Composer {
 /**
  * Recompone la cámara en un lienzo del tamaño exacto del formato (1080×1920).
  *
- * Llena el formato vertical sin deformar la imagen, igual que object-cover
- * en la vista previa. Si la cámara entrega otra proporción, solo se recorta
- * el excedente centrado necesario para cubrir el lienzo sin bandas.
+ * Mantiene la salida vertical. La captura vertical llena el marco; si el
+ * dispositivo solo entrega horizontal/cuadrado, se conserva su campo de visión
+ * con bandas en lugar de ampliarlo varias veces. Comparte cameraFit con la UI.
  *
  * Devuelve `null` si el navegador no sabe capturar un lienzo; quien llama debe
  * seguir con la pista original.
@@ -209,8 +221,10 @@ export function composeVertical(
     const sw = video.videoWidth;
     const sh = video.videoHeight;
     if (sw && sh) {
-      // Mismo encuadre 9:16 que object-cover, incluso al girar el móvil.
-      const scale = Math.max(width / sw, height / sh);
+      const fit = cameraFit(sw, sh, format);
+      const scale = fit === 'cover'
+        ? Math.max(width / sw, height / sh)
+        : Math.min(width / sw, height / sh);
       const drawWidth = sw * scale;
       const drawHeight = sh * scale;
       context.fillStyle = '#000';

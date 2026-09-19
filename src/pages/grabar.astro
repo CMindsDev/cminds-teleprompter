@@ -30,14 +30,13 @@ import Icon from '../components/Icon.astro';
   >
     <!--
       Marco de captura: siempre vertical, lo dé la cámara en vertical o no.
-      `object-cover` llena el formato vertical, y `composeVertical` aplica
-      ese mismo ajuste al archivo, así que lo que se ve es lo que se graba.
+      El ajuste depende de los fotogramas reales y se comparte con la grabación.
     -->
-    <div id="capture-frame" class="absolute inset-0 m-auto aspect-[var(--capture-aspect)] max-h-full max-w-full">
+    <div id="capture-frame" class="capture-viewport">
       <!-- `scale-x-[-1]` refleja la vista previa, no el archivo grabado. -->
       <video
         id="camera"
-        class="h-full w-full scale-x-[-1] object-cover"
+        class="absolute inset-0 h-full w-full scale-x-[-1] object-contain"
         playsinline
         autoplay
         muted></video>
@@ -268,7 +267,7 @@ import Icon from '../components/Icon.astro';
       aria-label="Revisar la grabación"
     >
       <!-- Mismo marco que el encuadre: la revisión enseña lo que se grabó. -->
-      <div class="absolute inset-0 m-auto aspect-[var(--capture-aspect)] max-h-full max-w-full">
+      <div class="capture-viewport">
         <video id="review-player" class="h-full w-full bg-black object-contain" playsinline></video>
       </div>
 
@@ -328,6 +327,21 @@ import Icon from '../components/Icon.astro';
   </main>
 </Base>
 
+<style>
+  .capture-viewport {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: min(100%, calc(var(--app-vh) * (var(--capture-aspect))));
+    aspect-ratio: var(--capture-aspect);
+    /* Una dimensión automática conserva 9:16 incluso en pantallas muy altas. */
+    height: auto;
+    overflow: hidden;
+    background: black;
+  }
+</style>
+
 <script>
   import { gsap } from 'gsap';
   import { Teleprompter } from '../lib/teleprompter';
@@ -340,6 +354,7 @@ import Icon from '../components/Icon.astro';
     startRecording,
     stopStream,
     composeVertical,
+    cameraFit,
     describeStream,
     type Composer,
     CAPTURE_FORMATS,
@@ -424,13 +439,22 @@ import Icon from '../components/Icon.astro';
     /** Evita guardar dos veces si se toca el botón repetidamente. */
     let saving = false;
 
+    const syncCameraFit = (): void => {
+      video.style.objectFit = cameraFit(video.videoWidth, video.videoHeight);
+    };
+    video.addEventListener('loadedmetadata', syncCameraFit);
+    video.addEventListener('resize', syncCameraFit);
+
     async function openCamera(): Promise<void> {
       try {
+        stopStream(stream);
+        stream = null;
         stream = await requestCamera({ facingMode: 'user', audio: true, format: DEFAULT_FORMAT });
         video.srcObject = stream;
         await video.play().catch(() => {
           /* Algunos navegadores exigen gesto del usuario; el autoplay muted suele bastar. */
         });
+        syncCameraFit();
         errorPanel.classList.add('hidden');
         errorPanel.classList.remove('grid');
       } catch (error) {
@@ -457,7 +481,7 @@ import Icon from '../components/Icon.astro';
         const { width, height } = CAPTURE_FORMATS[DEFAULT_FORMAT];
         const refresh = (): void => {
           readout.textContent = stream
-            ? `${describeStream(stream, video)} · salida ${width}×${height}`
+            ? `${describeStream(stream, video)} · ajuste ${video.style.objectFit} · salida ${width}×${height}`
             : 'sin cámara';
         };
         video.addEventListener('loadedmetadata', refresh);
@@ -872,6 +896,8 @@ import Icon from '../components/Icon.astro';
     /* ── Limpieza ────────────────────────────────────────── */
 
     const cleanup = (): void => {
+      video.removeEventListener('loadedmetadata', syncCameraFit);
+      video.removeEventListener('resize', syncCameraFit);
       prompter.destroy();
       composer?.stop();
       window.clearInterval(timerId);
