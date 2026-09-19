@@ -52,7 +52,11 @@ Durante la grabación se suman ([teleprompter.ts](src/lib/teleprompter.ts)):
 - **Avanzar / retroceder** por bloques de líneas
 - **Espejo horizontal** para cristales de teleprompter físicos
 - **Editar el texto** sin salir del flujo (botón «Editar»)
-- **Barra de progreso** de lectura
+- **Anillo de progreso** de lectura alrededor del botón de detener, en rojo. Era
+  una barra horizontal que cruzaba por detrás de los controles y se leía como un
+  elemento roto; pegado al único botón que avanza con el texto, se entiende solo.
+  El trazo usa `pathLength="100"`, así que el recorrido va en 0–100 sin depender
+  del radio y cambiar el tamaño del anillo no obliga a recalcular nada.
 
 Atajos de teclado: `↑`/`↓` velocidad y `+`/`-` tamaño funcionan en encuadre y
 en grabación; `espacio` (reproducir/pausar) y `←`/`→` (saltar líneas) solo

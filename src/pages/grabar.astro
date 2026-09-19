@@ -120,11 +120,6 @@ import Icon from '../components/Icon.astro';
       </div>
     </section>
 
-    <!-- Progreso de lectura -->
-    <div id="progress-rail" class="absolute inset-x-6 bottom-[7.25rem] z-20 hidden h-[3px] rounded-full bg-white/20">
-      <div id="progress-bar" class="h-full w-0 rounded-full bg-brand-500 transition-[width] duration-150"></div>
-    </div>
-
     <!-- ── Controles inferiores ───────────────────────────── -->
     <footer class="relative z-20 mt-auto px-6 pb-2 safe-bottom">
       <!--
@@ -206,14 +201,52 @@ import Icon from '../components/Icon.astro';
             class="text-white hover:bg-white/15"
           />
 
-          <button
-            id="btn-stop"
-            type="button"
-            class="grid h-[62px] w-[62px] place-items-center rounded-full bg-record text-white shadow-lg shadow-record/40 transition-transform duration-200 hover:scale-105 active:scale-95"
-            aria-label="Detener la grabación"
-          >
-            <span class="block h-[22px] w-[22px] rounded-[5px] bg-white"></span>
-          </button>
+          <!--
+            Progreso de lectura como anillo alrededor del botón de detener.
+            Antes era una barra horizontal que cruzaba por detrás de los
+            controles: se leía como un elemento roto más que como progreso.
+            Aquí vive pegado a lo único que avanza con el texto.
+          -->
+          <div class="relative grid place-items-center">
+            <svg
+              class="pointer-events-none absolute h-[78px] w-[78px]"
+              viewBox="0 0 78 78"
+              fill="none"
+              aria-hidden="true"
+            >
+              <circle cx="39" cy="39" r="37" stroke="currentColor" stroke-width="3" class="text-white/20" />
+              <!--
+                `pathLength="100"` normaliza el trazo: el recorrido se expresa
+                en 0–100 sin depender del radio, así que cambiar el tamaño del
+                anillo no obliga a recalcular la circunferencia en el script.
+                El giro va como atributo SVG, no como clase, para no competir
+                con las transformaciones de Tailwind.
+              -->
+              <circle
+                id="progress-ring"
+                cx="39"
+                cy="39"
+                r="37"
+                stroke="currentColor"
+                stroke-width="3"
+                stroke-linecap="round"
+                pathLength="100"
+                stroke-dasharray="100"
+                stroke-dashoffset="100"
+                transform="rotate(-90 39 39)"
+                class="text-record transition-[stroke-dashoffset] duration-150 ease-linear"
+              />
+            </svg>
+
+            <button
+              id="btn-stop"
+              type="button"
+              class="grid h-[62px] w-[62px] place-items-center rounded-full bg-record text-white shadow-lg shadow-record/40 transition-transform duration-200 hover:scale-105 active:scale-95"
+              aria-label="Detener la grabación"
+            >
+              <span class="block h-[22px] w-[22px] rounded-[5px] bg-white"></span>
+            </button>
+          </div>
 
           <IconButton
             id="btn-next"
@@ -379,8 +412,7 @@ import Icon from '../components/Icon.astro';
     const controlsRecording = need('controls-recording');
     const timerWrap = need('timer-wrap');
     const timerEl = need('timer');
-    const progressRail = need('progress-rail');
-    const progressBar = need('progress-bar');
+    const progressRing = need<SVGCircleElement>('progress-ring', SVGCircleElement);
     const stageHeader = need('stage-header');
     const reviewLayer = need('review-layer');
     const reviewPlayer = need('review-player', HTMLVideoElement);
@@ -413,7 +445,8 @@ import Icon from '../components/Icon.astro';
 
     const prompter = new Teleprompter(viewport, track, { ...speech.settings }, {
       onProgress: (ratio) => {
-        progressBar.style.width = `${ratio * 100}%`;
+        // `pathLength=100`: el desfase es directamente el porcentaje restante.
+        progressRing.style.strokeDashoffset = String(100 - ratio * 100);
       },
       onEnd: () => toast('Llegaste al final del guion'),
       onStateChange: (playing) => {
@@ -506,7 +539,6 @@ import Icon from '../components/Icon.astro';
       controlsRecording.classList.toggle('hidden', state !== 'recording');
       viewport.classList.toggle('hidden', state !== 'recording');
       viewport.classList.remove('opacity-45');
-      progressRail?.classList.toggle('hidden', state !== 'recording');
       maybe('btn-mirror')?.classList.toggle('hidden', state !== 'recording');
 
       timerWrap?.classList.toggle('hidden', state !== 'recording');
