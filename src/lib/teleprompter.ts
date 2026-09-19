@@ -23,6 +23,8 @@ export class Teleprompter {
   private offset = 0;
   private playing = false;
   private maxOffset = 0;
+  private startY = 0;
+  private resizeObserver: ResizeObserver | null = null;
   private tick: (() => void) | null = null;
 
   constructor(
@@ -38,7 +40,9 @@ export class Teleprompter {
 
     // El alto del texto cambia al editar, al rotar o al cambiar el tamaño de fuente.
     if (typeof ResizeObserver !== 'undefined') {
-      new ResizeObserver(() => this.measure()).observe(this.track);
+      this.resizeObserver = new ResizeObserver(() => this.measure());
+      this.resizeObserver.observe(this.track);
+      this.resizeObserver.observe(this.viewport);
     }
   }
 
@@ -75,6 +79,7 @@ export class Teleprompter {
 
   destroy(): void {
     this.pause();
+    this.resizeObserver?.disconnect();
   }
 
   get isPlaying(): boolean {
@@ -85,6 +90,8 @@ export class Teleprompter {
 
   /** Salta al principio. */
   restart(): void {
+    // El viewport está oculto en la vista previa; medir al mostrar la grabación.
+    this.measure();
     this.setOffset(0);
   }
 
@@ -152,16 +159,21 @@ export class Teleprompter {
   }
 
   private measure(): void {
+    const height = this.viewport.clientHeight;
+    if (!height) return;
+    const progress = this.progress;
+    // La primera línea entra por el borde inferior, no aparece arriba de golpe.
+    this.startY = height;
     // Dejamos medio viewport de margen al final para que la última línea
     // llegue a la zona de lectura y no se quede pegada abajo.
-    const tail = this.viewport.clientHeight * 0.5;
-    this.maxOffset = Math.max(0, this.track.scrollHeight - this.viewport.clientHeight + tail);
-    this.setOffset(this.offset);
+    const tail = height * 0.5;
+    this.maxOffset = this.startY + this.track.scrollHeight - height + tail;
+    this.setOffset(progress * this.maxOffset);
   }
 
   private setOffset(value: number): void {
     this.offset = clamp(value, 0, this.maxOffset);
-    gsap.set(this.track, { y: -this.offset });
+    gsap.set(this.track, { y: this.startY - this.offset });
     this.events.onProgress?.(this.progress);
   }
 }
