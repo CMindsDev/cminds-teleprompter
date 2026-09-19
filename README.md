@@ -111,6 +111,34 @@ cámara apaisada que un error de restricción imposible. Si el sensor no da lo
 pedido, el marco se ajusta a lo que entrega: enseñar un recorte vertical de una
 cámara apaisada sería repetir el mismo desajuste en escritorio.
 
+**La relación se mide en el `<video>`, no en `track.getSettings()`.** En el
+móvil la pista suele describir el sensor, montado en horizontal: informa de
+1280×720 aunque el navegador ya haya rotado la imagen y la pinte en 720×1280.
+Fiarse de la pista dejaba un marco apaisado sobre un vídeo vertical y, con
+`object-cover`, un recorte severo por los lados. Se consulta en
+`loadedmetadata` y en `resize` (giros de pantalla), porque `videoWidth` vale 0
+hasta que llegan los metadatos.
+
+El vídeo usa `object-contain`: con el marco bien medido se ve idéntico a
+`object-cover`, pero garantiza que nada se recorta nunca, ni siquiera en el
+instante previo a tener los metadatos.
+
+## Escritorio
+
+La app es de diseño móvil, y en pantallas grandes se presenta como tal en lugar
+de estirarse:
+
+- A partir de 1024 px, el lienzo es una **columna enmarcada** sobre un fondo con
+  profundidad. Va a toda altura, sin esquinas redondeadas ni márgenes, para que
+  la barra fija de «Nuevo prompt» siga alineada con ella.
+- La pantalla de grabación **se ensancha a 560 px**: una webcam es apaisada y a
+  430 px el encuadre quedaba en una franja diminuta dentro de una columna muy
+  alta.
+- Las tarjetas muestran un **botón de eliminar al pasar el ratón**. Con ratón,
+  «arrastra la tarjeta hacia arriba» no se descubre; el botón es el equivalente
+  nativo de escritorio y comparte el mismo borrado con deshacer. En táctil no
+  hay hover, así que no estorba, y con teclado se alcanza con el tabulador.
+
 ## Eliminar con gesto
 
 Arrastrar una tarjeta **hacia arriba** la borra: el relleno rojo crece desde

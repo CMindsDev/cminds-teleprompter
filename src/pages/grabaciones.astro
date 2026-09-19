@@ -163,7 +163,7 @@ import Icon from '../components/Icon.astro';
 
     function cardMarkup(recording: Recording): string {
       return `
-        <li>
+        <li class="group relative">
           <button
             type="button"
             data-id="${recording.id}"
@@ -196,6 +196,23 @@ import Icon from '../components/Icon.astro';
                 <path d="M7 21C6.45 21 5.97917 20.8042 5.5875 20.4125C5.19583 20.0208 5 19.55 5 19V6H4V4H9V3H15V4H20V6H19V19C19 19.55 18.8042 20.0208 18.4125 20.4125C18.0208 20.8042 17.55 21 17 21H7ZM9 17H11V8H9V17ZM13 17H15V8H13V17Z" fill="currentColor"/>
               </svg>
             </span>
+          </button>
+
+          <!--
+            Atajo de escritorio: con ratón, «arrastra la tarjeta hacia arriba»
+            no se descubre. Es hermano del botón-tarjeta, no hijo: un botón
+            dentro de otro botón es HTML inválido. En táctil no hay hover, así
+            que no estorba; con teclado se alcanza con el tabulador.
+          -->
+          <button
+            type="button"
+            data-delete="${recording.id}"
+            aria-label="Eliminar ${escapeHtml(recording.title)}"
+            class="absolute right-2.5 bottom-2.5 z-30 grid h-9 w-9 place-items-center rounded-full bg-ink/85 text-white opacity-0 shadow-lg backdrop-blur-sm transition-opacity duration-150 group-hover:opacity-100 hover:bg-record focus-visible:opacity-100"
+          >
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M7 21C6.45 21 5.97917 20.8042 5.5875 20.4125C5.19583 20.0208 5 19.55 5 19V6H4V4H9V3H15V4H20V6H19V19C19 19.55 18.8042 20.0208 18.4125 20.4125C18.0208 20.8042 17.55 21 17 21H7ZM9 17H11V8H9V17ZM13 17H15V8H13V17Z" fill="currentColor"/>
+            </svg>
           </button>
         </li>`;
     }
@@ -271,7 +288,18 @@ import Icon from '../components/Icon.astro';
     let currentBlob: Blob | null = null;
 
     grid.addEventListener('click', (event) => {
-      const button = (event.target as HTMLElement).closest<HTMLButtonElement>('button[data-id]');
+      const target = event.target as HTMLElement;
+
+      // El botón de borrar va primero: está encima de la tarjeta.
+      const remove = target.closest<HTMLButtonElement>('button[data-delete]');
+      if (remove?.dataset.delete) {
+        const id = remove.dataset.delete;
+        const card = grid.querySelector<HTMLElement>(`button[data-id="${id}"]`);
+        void removeRecording(id, card ?? undefined);
+        return;
+      }
+
+      const button = target.closest<HTMLButtonElement>('button[data-id]');
       if (button?.dataset.id) void openDetail(button.dataset.id);
     });
 

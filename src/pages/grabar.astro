@@ -19,8 +19,12 @@ import Icon from '../components/Icon.astro';
     comparten el encuadre, la revisión y las restricciones de `getUserMedia`.
     El futuro selector de formato solo tendrá que cambiar esta variable.
   -->
+  <!--
+    En escritorio el lienzo se ensancha: una webcam es apaisada y a 430 px el
+    encuadre quedaba en una franja diminuta dentro de una columna muy alta.
+  -->
   <main
-    class="app-shell relative overflow-hidden bg-black"
+    class="app-shell relative overflow-hidden bg-black lg:max-w-[560px]"
     style="--capture-aspect: 9 / 16"
     data-state="preview"
     id="stage"
@@ -38,7 +42,7 @@ import Icon from '../components/Icon.astro';
       <!-- `scale-x-[-1]` refleja la vista previa, no el archivo grabado. -->
       <video
         id="camera"
-        class="h-full w-full scale-x-[-1] object-cover"
+        class="h-full w-full scale-x-[-1] object-contain"
         playsinline
         autoplay
         muted></video>
@@ -333,7 +337,7 @@ import Icon from '../components/Icon.astro';
     slugify,
     startRecording,
     stopStream,
-    trackAspectRatio,
+    displayedAspectRatio,
     CAPTURE_FORMATS,
     DEFAULT_FORMAT,
     MediaError,
@@ -422,8 +426,8 @@ import Icon from '../components/Icon.astro';
      * no se corresponde con el archivo: justo el desajuste que esto viene a
      * arreglar. Si el sensor no da lo pedido, manda el sensor.
      */
-    function syncCaptureAspect(active: MediaStream): void {
-      const real = trackAspectRatio(active);
+    function syncCaptureAspect(): void {
+      const real = displayedAspectRatio(video);
       if (real === null) return;
 
       const wanted = CAPTURE_FORMATS[DEFAULT_FORMAT].ratio;
@@ -431,11 +435,15 @@ import Icon from '../components/Icon.astro';
       stage.style.setProperty('--capture-aspect', css);
     }
 
+    // `loadedmetadata` es el primer momento en que `videoWidth` es real;
+    // `resize` cubre los giros de pantalla y los cambios de cámara.
+    video.addEventListener('loadedmetadata', syncCaptureAspect);
+    video.addEventListener('resize', syncCaptureAspect);
+
     async function openCamera(): Promise<void> {
       try {
         stream = await requestCamera({ facingMode: 'user', audio: true, format: DEFAULT_FORMAT });
         video.srcObject = stream;
-        syncCaptureAspect(stream);
         await video.play().catch(() => {
           /* Algunos navegadores exigen gesto del usuario; el autoplay muted suele bastar. */
         });

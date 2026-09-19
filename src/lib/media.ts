@@ -118,11 +118,22 @@ export async function requestCamera({
   }
 }
 
-/** Relación real que entrega la cámara, para avisar si no es la pedida. */
-export function trackAspectRatio(stream: MediaStream): number | null {
-  const settings = stream.getVideoTracks()[0]?.getSettings();
-  if (!settings?.width || !settings.height) return null;
-  return settings.width / settings.height;
+/**
+ * Relación de aspecto de la imagen **tal y como se ve**.
+ *
+ * Hay que mirar el elemento `<video>`, no `track.getSettings()`. En el móvil la
+ * pista suele describir el sensor, que está montado en horizontal: informa de
+ * 1280×720 aunque el navegador ya haya rotado la imagen y la esté pintando en
+ * 720×1280. Fiarse de la pista deja un marco apaisado sobre un vídeo vertical,
+ * y con `object-cover` eso es un recorte brutal por los lados.
+ *
+ * `videoWidth` vale 0 hasta que llegan los metadatos, así que esto se consulta
+ * en `loadedmetadata` y en `resize` (giros de pantalla), no justo al asignar
+ * `srcObject`.
+ */
+export function displayedAspectRatio(video: HTMLVideoElement): number | null {
+  if (!video.videoWidth || !video.videoHeight) return null;
+  return video.videoWidth / video.videoHeight;
 }
 
 /** Apaga todas las pistas: sin esto el indicador de cámara sigue encendido. */

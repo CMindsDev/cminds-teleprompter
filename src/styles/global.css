@@ -102,6 +102,29 @@
   flex-direction: column;
 }
 
+/*
+   En escritorio la app deja de flotar sobre un vacío blanco: el lienzo se
+   presenta como una columna enmarcada sobre un fondo con algo de profundidad.
+   Se mantiene a toda altura, sin esquinas redondeadas ni márgenes, para que la
+   barra fija de «Nuevo prompt» (`fixed bottom-0`) siga alineada con ella.
+*/
+@media (min-width: 1024px) {
+  body {
+    background-image: radial-gradient(
+      120% 80% at 50% -10%,
+      color-mix(in srgb, var(--color-brand-500) 9%, transparent),
+      transparent 60%
+    );
+    background-attachment: fixed;
+  }
+
+  .app-shell {
+    box-shadow:
+      0 0 0 1px color-mix(in srgb, var(--color-ink) 8%, transparent),
+      0 24px 70px -40px color-mix(in srgb, var(--color-ink) 45%, transparent);
+  }
+}
+
 @utility safe-bottom {
   padding-bottom: max(1.5rem, env(safe-area-inset-bottom));
 }
